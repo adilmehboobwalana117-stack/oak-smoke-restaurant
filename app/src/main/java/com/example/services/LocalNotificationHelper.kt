@@ -129,12 +129,12 @@ object LocalNotificationHelper {
         val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
 
         val builder = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification_flame)
             .setContentTitle(title)
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setCategory(if (withSoundAlert) NotificationCompat.CATEGORY_EVENT else NotificationCompat.CATEGORY_STATUS)
             .setAutoCancel(true)
             .setSound(soundUri)
 

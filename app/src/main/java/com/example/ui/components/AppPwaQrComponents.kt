@@ -339,16 +339,22 @@ fun PwaDownloadAndQrModal(
                 )
             }
 
-            // Target selector: Web PWA vs Android Play Link
+            // Target selector: Web PWA, Play Tester Opt-In, or Play Store
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 AppDownloadTarget.entries.forEach { target ->
                     FilterChip(
                         selected = selectedTarget == target,
                         onClick = { selectedTarget = target },
-                        label = { Text(target.label) },
+                        label = {
+                            Text(
+                                text = target.label,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = SmokedAmber,
                             selectedLabelColor = CharcoalDeep
@@ -419,10 +425,10 @@ fun PwaDownloadAndQrModal(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = if (selectedTarget == AppDownloadTarget.WEB_PWA) {
-                        stringResource(R.string.pwa_qr_open_browser)
-                    } else {
-                        "Open Android App Download Link"
+                    text = when (selectedTarget) {
+                        AppDownloadTarget.WEB_PWA -> stringResource(R.string.pwa_qr_open_browser)
+                        AppDownloadTarget.PLAY_TESTER -> "Open Play Tester Opt-In Link"
+                        AppDownloadTarget.ANDROID_STORE -> "Open Google Play Store Link"
                     },
                     fontWeight = FontWeight.Bold
                 )

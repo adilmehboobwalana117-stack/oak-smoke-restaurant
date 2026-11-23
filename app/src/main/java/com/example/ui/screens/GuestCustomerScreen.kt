@@ -103,6 +103,9 @@ import com.example.data.SeatingZone
 import com.example.data.SpiceLevel
 import com.example.data.formatPkr
 import com.example.services.AppPwaQrService
+import com.example.ui.components.AppScreenshotsGallerySheet
+import com.example.ui.components.PrivacyAndScreenshotsCard
+import com.example.ui.components.PrivacyPolicySheet
 import com.example.ui.components.PwaDownloadAndQrModal
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.SmokedCard
@@ -148,6 +151,8 @@ fun GuestCustomerShell(
     var showGuestCheckoutSheet by remember { mutableStateOf(false) }
     var showTopPwaQrStrip by remember { mutableStateOf(true) }
     var showPwaQrModal by remember { mutableStateOf(false) }
+    var showPrivacyPolicy by remember { mutableStateOf(false) }
+    var showScreenshotsGallery by remember { mutableStateOf(false) }
 
     // Silent auto sign-in for returning Google users (never blocks guest browsing)
     LaunchedEffect(Unit) {
@@ -366,7 +371,9 @@ fun GuestCustomerShell(
                             )
                             else -> GuestAccountSignInTab(
                                 isSigningIn = isSigningIn,
-                                onRequestSignIn = { launchGoogleSignIn() }
+                                onRequestSignIn = { launchGoogleSignIn() },
+                                onOpenPrivacyPolicy = { showPrivacyPolicy = true },
+                                onOpenScreenshots = { showScreenshotsGallery = true }
                             )
                         }
                     }
@@ -469,6 +476,14 @@ fun GuestCustomerShell(
                 scope.launch { snackbarHostState.showSnackbar(msg) }
             }
         )
+    }
+
+    if (showPrivacyPolicy) {
+        PrivacyPolicySheet(onDismiss = { showPrivacyPolicy = false })
+    }
+
+    if (showScreenshotsGallery) {
+        AppScreenshotsGallerySheet(onDismiss = { showScreenshotsGallery = false })
     }
 }
 
@@ -974,7 +989,9 @@ private fun GuestTablesPreviewTab(
 @Composable
 private fun GuestAccountSignInTab(
     isSigningIn: Boolean,
-    onRequestSignIn: () -> Unit
+    onRequestSignIn: () -> Unit,
+    onOpenPrivacyPolicy: () -> Unit,
+    onOpenScreenshots: () -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1028,6 +1045,13 @@ private fun GuestAccountSignInTab(
                     }
                 }
             }
+        }
+
+        item {
+            PrivacyAndScreenshotsCard(
+                onOpenPrivacyPolicy = onOpenPrivacyPolicy,
+                onOpenScreenshots = onOpenScreenshots
+            )
         }
     }
 }

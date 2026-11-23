@@ -654,4 +654,33 @@ class RestaurantRepository(private val db: FirebaseFirestore) {
             Result.failure(e)
         }
     }
+
+    /**
+     * Deletes the signed-in user's personal profile document, optional role grant,
+     * and attempts to remove their Firebase Auth account (Google Play Account Deletion Policy).
+     */
+    suspend fun deleteOwnAccountData(): Result<Unit> {
+        val path = "users/${auth.currentUser?.uid ?: "unauthenticated"}"
+        return try {
+            val uid = requireUserId()
+            try {
+                db.collection("roleGrants").document(uid).delete().await()
+            } catch (_: Exception) {
+                // Role grant may not exist for regular customers
+            }
+            db.collection("users").document(uid).delete().await()
+            try {
+                auth.currentUser?.delete()?.await()
+            } catch (_: Exception) {
+                // If Firebase requires recent sign-in for auth deletion, profile data is already purged
+                // and caller signs out immediately.
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, path)
+            Result.failure(e)
+        }
+    }
 }

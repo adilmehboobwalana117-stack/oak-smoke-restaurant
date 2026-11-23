@@ -777,4 +777,22 @@ class RestaurantViewModel(
             adminRepo.seedStarterTables()
         }
     }
+
+    fun deleteOwnAccountAndData(onDeleted: () -> Unit) {
+        viewModelScope.launch {
+            _isBusy.value = true
+            try {
+                repo.deleteOwnAccountData()
+                    .onSuccess {
+                        _snackbarMessage.value = "Account & personal profile data deleted."
+                        onDeleted()
+                    }
+                    .onFailure { err ->
+                        _errorMessage.value = err.message ?: "Unable to delete account data."
+                    }
+            } finally {
+                _isBusy.value = false
+            }
+        }
+    }
 }

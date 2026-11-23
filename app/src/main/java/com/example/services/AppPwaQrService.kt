@@ -37,14 +37,19 @@ import java.io.FileOutputStream
 
 enum class AppDownloadTarget(val label: String, val url: String, val description: String) {
     WEB_PWA(
-        label = "Web PWA App",
+        label = "Web PWA",
         url = AppPwaQrService.PWA_APP_URL,
         description = "Open in Chrome or Safari & tap 'Install App' / 'Add to Home Screen'."
     ),
+    PLAY_TESTER(
+        label = "Tester Opt-In",
+        url = AppPwaQrService.PLAY_TESTER_URL,
+        description = "Google Play Internal/Closed Testing opt-in link. Testers must accept here first before downloading."
+    ),
     ANDROID_STORE(
-        label = "Android App Link",
+        label = "Play Store",
         url = AppPwaQrService.ANDROID_PLAY_URL,
-        description = "Direct Android installation link for Oak & Smoke Restaurant Hasilpur."
+        description = "Direct Google Play Store listing for Oak & Smoke Restaurant Hasilpur."
     )
 }
 
@@ -52,6 +57,9 @@ object AppPwaQrService {
 
     const val PWA_APP_URL: String =
         "https://ais-pre-rhal5qnhshjimdwqb2v4io-756142993760.asia-southeast1.run.app"
+
+    val PLAY_TESTER_URL: String =
+        "https://play.google.com/apps/testing/${BuildConfig.APPLICATION_ID}"
 
     val ANDROID_PLAY_URL: String =
         "https://play.google.com/store/apps/details?id=${BuildConfig.APPLICATION_ID}"

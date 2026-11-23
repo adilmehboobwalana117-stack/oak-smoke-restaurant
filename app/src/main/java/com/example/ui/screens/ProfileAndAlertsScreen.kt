@@ -55,7 +55,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.NotificationItem
 import com.example.data.UserRoleTier
 import com.example.data.formatTimestampShort
+import com.example.ui.components.AppScreenshotsGallerySheet
 import com.example.ui.components.EmptyStateCard
+import com.example.ui.components.PrivacyAndScreenshotsCard
+import com.example.ui.components.PrivacyPolicySheet
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.SmokedCard
 import com.example.ui.components.StatusPill
@@ -89,6 +92,9 @@ fun ProfileAndAlertsScreen(
 
     var showStaffUnlockDialog by remember { mutableStateOf(false) }
     var showOwnerInitDialog by remember { mutableStateOf(false) }
+    var showPrivacyPolicy by remember { mutableStateOf(false) }
+    var showScreenshotsGallery by remember { mutableStateOf(false) }
+    var showDeleteAccountDialog by remember { mutableStateOf(false) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -299,6 +305,16 @@ fun ProfileAndAlertsScreen(
             }
         }
 
+        // Privacy Policy, App Screenshots & Account Deletion (Google Play Compliance)
+        item {
+            PrivacyAndScreenshotsCard(
+                onOpenPrivacyPolicy = { showPrivacyPolicy = true },
+                onOpenScreenshots = { showScreenshotsGallery = true },
+                showDeleteAccountAction = true,
+                onRequestDeleteAccount = { showDeleteAccountDialog = true }
+            )
+        }
+
         // Sign Out
         item {
             OutlinedButton(
@@ -415,6 +431,50 @@ fun ProfileAndAlertsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showOwnerInitDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showPrivacyPolicy) {
+        PrivacyPolicySheet(onDismiss = { showPrivacyPolicy = false })
+    }
+
+    if (showScreenshotsGallery) {
+        AppScreenshotsGallerySheet(onDismiss = { showScreenshotsGallery = false })
+    }
+
+    if (showDeleteAccountDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAccountDialog = false },
+            title = { Text("Delete My Account & Data") },
+            text = {
+                Text(
+                    text = "This permanently deletes your Oak & Smoke profile, saved delivery address, phone number, loyalty balance, and signs you out. This action cannot be undone.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteOwnAccountAndData {
+                            showDeleteAccountDialog = false
+                            onSignOut()
+                        }
+                    },
+                    enabled = !isBusy,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CrimsonEmber,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    modifier = Modifier.testTag("confirm_delete_account_btn")
+                ) {
+                    Text("Delete Permanently", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAccountDialog = false }) {
+                    Text("Cancel")
+                }
             }
         )
     }
