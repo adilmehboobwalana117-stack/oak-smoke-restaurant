@@ -1,3 +1,12 @@
 <resources>
     <string name="app_name">Oak &amp; Smoke</string>
+    <string name="pwa_banner_title">App Installed · QR &amp; Web PWA</string>
+    <string name="pwa_banner_subtitle">Scan QR or download Oak &amp; Smoke PWA</string>
+    <string name="pwa_download_cta">Download PWA</string>
+    <string name="pwa_qr_modal_title">Oak &amp; Smoke App QR &amp; PWA</string>
+    <string name="pwa_qr_open_browser">Download / Open Web PWA</string>
+    <string name="pwa_qr_pin_shortcut">Add Shortcut</string>
+    <string name="pwa_qr_share_link">Share Link</string>
+    <string name="pwa_qr_copy_link">Copy Link</string>
+    <string name="pwa_qr_print_poster">Print QR Card</string>
 </resources>

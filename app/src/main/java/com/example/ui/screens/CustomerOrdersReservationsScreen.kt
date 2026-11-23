@@ -603,6 +603,7 @@ private fun CustomerLoyaltyFeedbackTab(viewModel: RestaurantViewModel) {
 
     val pts = profile?.loyaltyPoints ?: 0L
     val ptVal = config?.loyaltyPointValuePkr ?: 5L
+    val earnPer100 = config?.loyaltyEarnPer100Pkr ?: 1L
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -618,7 +619,10 @@ private fun CustomerLoyaltyFeedbackTab(viewModel: RestaurantViewModel) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         Text(
                             text = "OAK & SMOKE LOYALTY CLUB",
                             style = MaterialTheme.typography.labelSmall,
@@ -630,9 +634,18 @@ private fun CustomerLoyaltyFeedbackTab(viewModel: RestaurantViewModel) {
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Redeemable value: ${formatPkr(pts * ptVal)} on COD orders",
+                            text = "Redeemable value: ${formatPkr(pts * ptVal)} (1 pt = ${formatPkr(ptVal)})",
                             style = MaterialTheme.typography.bodySmall,
                             color = CorianderGreen
+                        )
+                        Text(
+                            text = if (earnPer100 > 0L) {
+                                "Earning rate: $earnPer100 pt per Rs. 100 on delivered COD orders"
+                            } else {
+                                "Point earning is currently paused by management"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     Box(

@@ -76,13 +76,17 @@ import com.example.data.AuthManager
 import com.example.data.FirestoreProvider
 import com.example.data.RestaurantRepository
 import com.example.data.UserRoleTier
+import com.example.services.AppPwaQrService
 import com.example.services.LocalNotificationHelper
 import com.example.services.NetworkConnectivityObserver
 import com.example.ui.components.OfflineStatusBanner
+import com.example.ui.components.PwaDownloadAndQrModal
 import com.example.ui.components.StatusPill
-import com.example.ui.screens.AuthScreen
+import com.example.ui.components.TopBarQrPwaActionButton
+import com.example.ui.components.TopInstalledPwaQrStrip
 import com.example.ui.screens.CustomerMenuScreen
 import com.example.ui.screens.CustomerOrdersReservationsScreen
+import com.example.ui.screens.GuestCustomerShell
 import com.example.ui.screens.OwnerDashboardScreen
 import com.example.ui.screens.ProfileAndAlertsScreen
 import com.example.ui.screens.RiderPortalScreen
@@ -100,6 +104,7 @@ import com.google.firebase.auth.auth
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -128,16 +133,33 @@ internal fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
 @Composable
 fun AppNavigation(auth: FirebaseAuth = Firebase.auth) {
     val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
+    var guestCartQuantities by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     val user = currentUser
     if (user == null) {
-        AuthScreen(onAuthSuccess = { /* AuthStateListener drives navigation */ })
+        GuestCustomerShell(
+            cartQuantities = guestCartQuantities,
+            onIncrementCart = { itemId ->
+                guestCartQuantities = guestCartQuantities.toMutableMap().apply {
+                    put(itemId, (get(itemId) ?: 0) + 1)
+                }
+            },
+            onDecrementCart = { itemId ->
+                guestCartQuantities = guestCartQuantities.toMutableMap().apply {
+                    val next = (get(itemId) ?: 0) - 1
+                    if (next <= 0) remove(itemId) else put(itemId, next)
+                }
+            },
+            onAuthSuccess = { /* AuthStateListener drives transition into OakAndSmokeShell */ }
+        )
     } else {
         key(user.uid) {
             OakAndSmokeShell(
                 currentUserId = user.uid,
                 userDisplayName = user.displayName ?: "Oak & Smoke Guest",
                 userEmail = user.email ?: "",
-                userEmailVerified = user.isEmailVerified
+                userEmailVerified = user.isEmailVerified,
+                initialGuestCart = guestCartQuantities,
+                onGuestCartMerged = { guestCartQuantities = emptyMap() }
             )
         }
     }
@@ -157,7 +179,9 @@ private fun OakAndSmokeShell(
     currentUserId: String,
     userDisplayName: String,
     userEmail: String,
-    userEmailVerified: Boolean
+    userEmailVerified: Boolean,
+    initialGuestCart: Map<String, Int> = emptyMap(),
+    onGuestCartMerged: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -194,7 +218,17 @@ private fun OakAndSmokeShell(
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedDestId by remember { mutableStateOf("menu") }
     var customerHubInitialTab by remember { mutableIntStateOf(0) }
+    var showTopPwaQrStrip by remember { mutableStateOf(true) }
+    var showPwaQrModal by remember { mutableStateOf(false) }
     val seenNotifIds = remember { mutableSetOf<String>() }
+
+    // Carry over any dishes the customer added while browsing in Guest Customer mode
+    LaunchedEffect(initialGuestCart) {
+        if (initialGuestCart.isNotEmpty()) {
+            viewModel.mergeGuestCart(initialGuestCart)
+            onGuestCartMerged()
+        }
+    }
 
     // Switch destination automatically when user elevates/switches portal mode
     LaunchedEffect(portalMode) {
@@ -286,6 +320,9 @@ private fun OakAndSmokeShell(
                         }
                     },
                     actions = {
+                        TopBarQrPwaActionButton(
+                            onClick = { showPwaQrModal = true }
+                        )
                         StatusPill(
                             label = if (effectiveRole == UserRoleTier.CUSTOMER) "Guest" else effectiveRole.displayLabel,
                             color = if (effectiveRole == UserRoleTier.CUSTOMER) SmokedAmber else CorianderGreen,
@@ -386,6 +423,23 @@ private fun OakAndSmokeShell(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     OfflineStatusBanner(isOnline = isOnline)
+                    TopInstalledPwaQrStrip(
+                        visible = showTopPwaQrStrip,
+                        onOpenQrModal = { showPwaQrModal = true },
+                        onDownloadPwa = {
+                            AppPwaQrService.openPwaDownload(context)
+                                .onSuccess {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar("Opening Oak & Smoke Web PWA. Tap 'Install App' in your browser.")
+                                    }
+                                }
+                                .onFailure {
+                                    showPwaQrModal = true
+                                }
+                        },
+                        onDismiss = { showTopPwaQrStrip = false },
+                        modifier = Modifier.widthIn(max = 860.dp)
+                    )
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -418,5 +472,14 @@ private fun OakAndSmokeShell(
                 }
             }
         }
+    }
+
+    if (showPwaQrModal) {
+        PwaDownloadAndQrModal(
+            onDismiss = { showPwaQrModal = false },
+            onFeedback = { msg ->
+                scope.launch { snackbarHostState.showSnackbar(msg) }
+            }
+        )
     }
 }

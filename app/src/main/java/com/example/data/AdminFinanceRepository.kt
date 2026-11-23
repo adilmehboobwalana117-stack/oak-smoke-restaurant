@@ -1220,4 +1220,103 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
             Result.failure(e)
         }
     }
+
+    suspend fun updateMenuItemPrice(itemId: String, newPricePkr: Long): Result<Unit> {
+        val path = "menuItems/$itemId"
+        return try {
+            requireUserId()
+            require(newPricePkr in 50L..250000L) { "Dish rate must be between Rs. 50 and Rs. 250,000." }
+            db.collection("menuItems").document(itemId).update(
+                mapOf(
+                    "pricePkr" to newPricePkr,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun toggleMenuItemFlags(itemId: String, available: Boolean, dailySpecial: Boolean): Result<Unit> {
+        val path = "menuItems/$itemId"
+        return try {
+            requireUserId()
+            db.collection("menuItems").document(itemId).update(
+                mapOf(
+                    "available" to available,
+                    "dailySpecial" to dailySpecial,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun seedStarterMenu(): Result<Unit> {
+        val path = "menuItems"
+        return try {
+            requireUserId()
+            val batch = db.batch()
+            OakAndSmokeSeeds.starterMenu.forEach { dish ->
+                batch.set(
+                    db.collection("menuItems").document(dish.id),
+                    mapOf(
+                        "catalogType" to "MENU",
+                        "name" to dish.name,
+                        "category" to dish.category,
+                        "description" to dish.description,
+                        "pricePkr" to dish.pricePkr,
+                        "imageKey" to dish.imageKey,
+                        "dailySpecial" to dish.dailySpecial,
+                        "available" to dish.available,
+                        "spiceLevel" to dish.spiceLevel,
+                        "prepMinutes" to dish.prepMinutes,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+            }
+            batch.commit().await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateLoyaltyProgramSettings(
+        earnPer100Pkr: Long,
+        pointValuePkr: Long
+    ): Result<Unit> {
+        val path = "restaurantConfig/oak_and_smoke"
+        return try {
+            requireUserId()
+            require(earnPer100Pkr in 0L..100L) { "Earn rate must be between 0 and 100 points per Rs. 100." }
+            require(pointValuePkr in 1L..500L) { "Point value must be between Rs. 1 and Rs. 500 per point." }
+            db.collection("restaurantConfig").document("oak_and_smoke").update(
+                mapOf(
+                    "loyaltyEarnPer100Pkr" to earnPer100Pkr,
+                    "loyaltyPointValuePkr" to pointValuePkr,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
 }

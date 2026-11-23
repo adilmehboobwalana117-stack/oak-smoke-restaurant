@@ -29,9 +29,13 @@ import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.PriceChange
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.RestaurantMenu
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Warning
@@ -91,7 +95,7 @@ import com.example.viewmodel.RestaurantViewModel
 @Composable
 fun OwnerDashboardScreen(viewModel: RestaurantViewModel) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("KPIs & Reports", "Riders", "Tables", "Menu & Specials", "Staff & Salaries", "Loyalty & Stock")
+    val tabs = listOf("KPIs & Reports", "Riders", "Tables", "Menu & Rates", "Staff & Salaries", "Loyalty & Stock")
 
     Column(modifier = Modifier.fillMaxSize()) {
         ScrollableTabRow(
@@ -526,7 +530,21 @@ private fun OwnerMenuStudioTab(viewModel: RestaurantViewModel) {
     val menuItems by viewModel.menuItems.collectAsStateWithLifecycle()
     val effectiveRole by viewModel.effectiveRole.collectAsStateWithLifecycle()
     var editingDish by remember { mutableStateOf<MenuItem?>(null) }
+    var rateEditingDish by remember { mutableStateOf<MenuItem?>(null) }
+    var removingDish by remember { mutableStateOf<MenuItem?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var categoryFilter by remember { mutableStateOf("ALL") }
+
+    val filteredDishes = remember(menuItems, searchQuery, categoryFilter) {
+        menuItems.filter { dish ->
+            val catOk = categoryFilter == "ALL" || dish.category == categoryFilter
+            val qOk = searchQuery.isBlank() ||
+                dish.name.contains(searchQuery, ignoreCase = true) ||
+                dish.description.contains(searchQuery, ignoreCase = true)
+            catOk && qOk
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -535,8 +553,8 @@ private fun OwnerMenuStudioTab(viewModel: RestaurantViewModel) {
     ) {
         item {
             SectionHeader(
-                title = "Menu & Daily Specials",
-                subtitle = "${menuItems.size} dishes in digital catalog",
+                title = "Menu, Dish Rates & Specials",
+                subtitle = "${menuItems.size} dishes · Add dishes, update PKR rates & remove items",
                 trailing = {
                     Button(
                         onClick = { showCreateDialog = true },
@@ -545,39 +563,155 @@ private fun OwnerMenuStudioTab(viewModel: RestaurantViewModel) {
                     ) {
                         Icon(Icons.Filled.Add, contentDescription = "Add Dish", modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Dish")
+                        Text("Add Dish")
                     }
                 }
             )
         }
 
-        items(menuItems, key = { it.id }) { dish ->
-            SmokedCard {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(dish.name, style = MaterialTheme.typography.titleSmall)
-                            if (dish.dailySpecial) StatusPill(label = "SPECIAL", color = TandoorCopper)
-                            if (!dish.available) StatusPill(label = "SOLD OUT", color = CrimsonEmber)
-                        }
-                        Text(
-                            text = "${MenuCategory.fromRaw(dish.category).displayLabel} · ${formatPkr(dish.pricePkr)}",
-                            style = MonoPriceStyle,
-                            color = SmokedAmber
+        item {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Search dish to update rate or remove...") },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = "Search menu") },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("admin_menu_search_input")
+            )
+        }
+
+        item {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                val filters = listOf("ALL" to "All (${menuItems.size})") +
+                    MenuCategory.entries.map { it.name to it.displayLabel }
+                filters.forEach { (key, label) ->
+                    FilterChip(
+                        selected = categoryFilter == key,
+                        onClick = { categoryFilter = key },
+                        label = { Text(label) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = SmokedAmber,
+                            selectedLabelColor = CharcoalDeep
                         )
-                    }
-                    IconButton(onClick = { editingDish = dish }, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.Filled.Edit, contentDescription = "Edit ${dish.name}", tint = SmokedAmber)
-                    }
-                    if (effectiveRole == UserRoleTier.OWNER) {
-                        IconButton(onClick = { viewModel.deleteMenuItem(dish.id) }, modifier = Modifier.size(48.dp)) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Delete ${dish.name}", tint = CrimsonEmber)
+                    )
+                }
+            }
+        }
+
+        if (menuItems.isEmpty()) {
+            item {
+                EmptyStateCard(
+                    icon = Icons.Filled.RestaurantMenu,
+                    title = "No menu dishes yet",
+                    subtitle = "Tap Add Dish above or load the Oak & Smoke starter Pakistani Karahi & BBQ menu below."
+                )
+            }
+            item {
+                OutlinedButton(
+                    onClick = { viewModel.seedStarterMenu() },
+                    border = BorderStroke(1.dp, SmokedAmber),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Load Starter Karahi & BBQ Menu", color = SmokedAmber, fontWeight = FontWeight.Bold)
+                }
+            }
+        } else if (filteredDishes.isEmpty()) {
+            item {
+                EmptyStateCard(
+                    icon = Icons.Filled.Search,
+                    title = "No matching dishes",
+                    subtitle = "Clear your search or choose another category."
+                )
+            }
+        } else {
+            items(filteredDishes, key = { it.id }) { dish ->
+                SmokedCard(borderColor = if (dish.available) MaterialTheme.colorScheme.outline else CrimsonEmber.copy(alpha = 0.6f)) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(dish.name, style = MaterialTheme.typography.titleSmall)
+                                    if (dish.dailySpecial) StatusPill(label = "SPECIAL", color = TandoorCopper)
+                                    if (!dish.available) StatusPill(label = "SOLD OUT", color = CrimsonEmber)
+                                }
+                                Text(
+                                    text = "${MenuCategory.fromRaw(dish.category).displayLabel} · ${formatPkr(dish.pricePkr)}",
+                                    style = MonoPriceStyle,
+                                    color = SmokedAmber
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { rateEditingDish = dish },
+                                border = BorderStroke(1.dp, SmokedAmber),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.testTag("quick_rate_${dish.id}")
+                            ) {
+                                Icon(Icons.Filled.PriceChange, contentDescription = "Change Rate", tint = SmokedAmber, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Rate", color = SmokedAmber)
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                FilterChip(
+                                    selected = dish.available,
+                                    onClick = { viewModel.toggleMenuItemFlags(dish, !dish.available, dish.dailySpecial) },
+                                    label = { Text(if (dish.available) "In Stock" else "Sold Out") },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = CorianderGreen.copy(alpha = 0.22f),
+                                        selectedLabelColor = CorianderGreen
+                                    )
+                                )
+                                FilterChip(
+                                    selected = dish.dailySpecial,
+                                    onClick = { viewModel.toggleMenuItemFlags(dish, dish.available, !dish.dailySpecial) },
+                                    label = { Text("Special") },
+                                    leadingIcon = {
+                                        Icon(Icons.Filled.Star, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = TandoorCopper.copy(alpha = 0.22f),
+                                        selectedLabelColor = TandoorCopper
+                                    )
+                                )
+                            }
+                            Row {
+                                IconButton(
+                                    onClick = { editingDish = dish },
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .testTag("edit_dish_${dish.id}")
+                                ) {
+                                    Icon(Icons.Filled.Edit, contentDescription = "Edit ${dish.name}", tint = SmokedAmber)
+                                }
+                                if (effectiveRole == UserRoleTier.OWNER) {
+                                    IconButton(
+                                        onClick = { removingDish = dish },
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .testTag("delete_dish_${dish.id}")
+                                    ) {
+                                        Icon(Icons.Filled.Delete, contentDescription = "Remove ${dish.name}", tint = CrimsonEmber)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -598,6 +732,100 @@ private fun OwnerMenuStudioTab(viewModel: RestaurantViewModel) {
                 )
                 showCreateDialog = false
                 editingDish = null
+            }
+        )
+    }
+
+    rateEditingDish?.let { target ->
+        var rateText by remember(target.id) { mutableStateOf(target.pricePkr.toString()) }
+        var rateError by remember(target.id) { mutableStateOf<String?>(null) }
+
+        AlertDialog(
+            onDismissRequest = { rateEditingDish = null },
+            title = { Text("Update Rate · ${target.name}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Current rate: ${formatPkr(target.pricePkr)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = rateText,
+                        onValueChange = { rateText = it.filter { c -> c.isDigit() }; rateError = null },
+                        label = { Text("New Rate (PKR)") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("quick_rate_input")
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(-100L to "-100", -50L to "-50", 50L to "+50", 100L to "+100").forEach { (delta, lbl) ->
+                            OutlinedButton(
+                                onClick = {
+                                    val cur = rateText.toLongOrNull() ?: target.pricePkr
+                                    rateText = (cur + delta).coerceIn(50L, 250000L).toString()
+                                    rateError = null
+                                },
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                            ) {
+                                Text(lbl, style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                    if (rateError != null) {
+                        Text(rateError!!, style = MaterialTheme.typography.bodySmall, color = CrimsonEmber)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val parsed = rateText.toLongOrNull() ?: 0L
+                        if (parsed !in 50L..250000L) {
+                            rateError = "Enter a valid PKR rate between Rs. 50 and Rs. 250,000."
+                        } else {
+                            viewModel.updateMenuItemPrice(target, parsed)
+                            rateEditingDish = null
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = SmokedAmber, contentColor = CharcoalDeep),
+                    modifier = Modifier.testTag("confirm_quick_rate_btn")
+                ) {
+                    Text("Update Rate", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { rateEditingDish = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    removingDish?.let { target ->
+        AlertDialog(
+            onDismissRequest = { removingDish = null },
+            title = { Text("Remove Dish from Menu?") },
+            text = {
+                Text("Remove \"${target.name}\" (${formatPkr(target.pricePkr)}) from the live Oak & Smoke menu? Existing past orders will not be affected.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteMenuItem(target.id)
+                        removingDish = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CrimsonEmber, contentColor = MaterialTheme.colorScheme.onError),
+                    modifier = Modifier.testTag("confirm_delete_dish_btn")
+                ) {
+                    Text("Remove Dish", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { removingDish = null }) { Text("Cancel") }
             }
         )
     }

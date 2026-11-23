@@ -346,6 +346,15 @@ class RestaurantViewModel(
         _cartQuantities.value = emptyMap()
     }
 
+    fun mergeGuestCart(guestQuantities: Map<String, Int>) {
+        if (guestQuantities.isEmpty()) return
+        _cartQuantities.value = _cartQuantities.value.toMutableMap().apply {
+            guestQuantities.forEach { (id, qty) ->
+                if (qty > 0) put(id, (get(id) ?: 0) + qty)
+            }
+        }
+    }
+
     private fun runMutation(successMsg: String? = null, block: suspend () -> Result<Any>) {
         viewModelScope.launch {
             _isBusy.value = true
@@ -639,6 +648,35 @@ class RestaurantViewModel(
 
     fun deleteMenuItem(itemId: String) {
         runMutation("Dish removed from menu") { adminRepo.deleteMenuItem(itemId) }
+    }
+
+    fun updateMenuItemPrice(dish: MenuItem, newPricePkr: Long) {
+        runMutation("Updated ${dish.name} rate to Rs. $newPricePkr") {
+            adminRepo.updateMenuItemPrice(dish.id, newPricePkr)
+        }
+    }
+
+    fun toggleMenuItemFlags(dish: MenuItem, available: Boolean, dailySpecial: Boolean) {
+        runMutation("Updated ${dish.name} status") {
+            adminRepo.toggleMenuItemFlags(dish.id, available, dailySpecial)
+        }
+    }
+
+    fun seedStarterMenu() {
+        runMutation("Loaded starter Karahi & BBQ menu") {
+            adminRepo.seedStarterMenu()
+        }
+    }
+
+    fun updateLoyaltyProgramSettings(earnPer100Pkr: Long, pointValuePkr: Long) {
+        val statusMsg = if (earnPer100Pkr == 0L) {
+            "Loyalty point earning paused (1 pt = Rs. $pointValuePkr)"
+        } else {
+            "Loyalty Program updated: $earnPer100Pkr pts/Rs.100 · 1 pt = Rs. $pointValuePkr"
+        }
+        runMutation(statusMsg) {
+            adminRepo.updateLoyaltyProgramSettings(earnPer100Pkr, pointValuePkr)
+        }
     }
 
     fun saveStaffMember(

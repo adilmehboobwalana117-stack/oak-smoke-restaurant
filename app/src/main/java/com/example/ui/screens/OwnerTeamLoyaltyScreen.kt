@@ -23,16 +23,20 @@ import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Loyalty
 import androidx.compose.material.icons.filled.Payments
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -280,20 +284,180 @@ fun OwnerLoyaltyAndStockTab(viewModel: RestaurantViewModel) {
     val customers by viewModel.allUsers.collectAsStateWithLifecycle()
     val staffList by viewModel.allStaffMembers.collectAsStateWithLifecycle()
     val inventory by viewModel.inventoryItems.collectAsStateWithLifecycle()
+    val config by viewModel.config.collectAsStateWithLifecycle()
+    val effectiveRole by viewModel.effectiveRole.collectAsStateWithLifecycle()
 
     var editingCustomerLoyalty by remember { mutableStateOf<UserProfile?>(null) }
     var editingStaffLoyalty by remember { mutableStateOf<StaffMember?>(null) }
     var showAddInventoryDialog by remember { mutableStateOf(false) }
+
+    val currentEarnRate = config?.loyaltyEarnPer100Pkr ?: 1L
+    val currentPointVal = config?.loyaltyPointValuePkr ?: 5L
+
+    var earnEnabled by remember(currentEarnRate) { mutableStateOf(currentEarnRate > 0L) }
+    var earnRateText by remember(currentEarnRate) { mutableStateOf((if (currentEarnRate > 0L) currentEarnRate else 1L).toString()) }
+    var pointValueText by remember(currentPointVal) { mutableStateOf(currentPointVal.toString()) }
+    var programError by remember { mutableStateOf<String?>(null) }
+
+    val totalCustomerPts = remember(customers) { customers.sumOf { it.loyaltyPoints } }
+    val totalStaffPts = remember(staffList) { staffList.sumOf { it.loyaltyPoints } }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // Admin Loyalty Point Program Control Center
         item {
             SectionHeader(
-                title = "Customer Loyalty Control",
-                subtitle = "Admin edit customer reward points"
+                title = "Loyalty Point Program Control",
+                subtitle = "Set earning rules, PKR redemption rate & pause/enable rewards"
+            )
+        }
+        item {
+            val previewEarn = if (earnEnabled) (earnRateText.toLongOrNull() ?: 0L).coerceIn(0L, 100L) else 0L
+            val previewVal = (pointValueText.toLongOrNull() ?: currentPointVal).coerceIn(1L, 500L)
+            val samplePtsOn2000 = (2000L / 100L) * previewEarn
+            val sampleDiscount = samplePtsOn2000 * previewVal
+
+            SmokedCard(borderColor = SmokedAmber.copy(alpha = 0.7f)) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Loyalty Earning Program", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                text = if (earnEnabled) "Customers automatically earn points on delivered COD orders" else "Point earning is paused (existing balances remain redeemable)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            StatusPill(
+                                label = if (earnEnabled) "ACTIVE" else "PAUSED",
+                                color = if (earnEnabled) CorianderGreen else CrimsonEmber
+                            )
+                            Switch(
+                                checked = earnEnabled,
+                                enabled = effectiveRole == UserRoleTier.OWNER,
+                                onCheckedChange = { earnEnabled = it; programError = null },
+                                modifier = Modifier.testTag("loyalty_program_toggle")
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = if (earnEnabled) earnRateText else "0",
+                            onValueChange = { earnRateText = it.filter { c -> c.isDigit() }; programError = null },
+                            enabled = earnEnabled && effectiveRole == UserRoleTier.OWNER,
+                            label = { Text("Pts / Rs. 100") },
+                            singleLine = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("loyalty_earn_rate_input")
+                        )
+                        OutlinedTextField(
+                            value = pointValueText,
+                            onValueChange = { pointValueText = it.filter { c -> c.isDigit() }; programError = null },
+                            enabled = effectiveRole == UserRoleTier.OWNER,
+                            label = { Text("1 Pt = PKR") },
+                            singleLine = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("loyalty_point_value_input")
+                        )
+                    }
+
+                    // Quick Preset Chips for Point Value
+                    if (effectiveRole == UserRoleTier.OWNER) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(1L, 2L, 5L, 10L, 20L).forEach { preset ->
+                                FilterChip(
+                                    selected = pointValueText.toLongOrNull() == preset,
+                                    onClick = { pointValueText = preset.toString(); programError = null },
+                                    label = { Text("1 pt = Rs. $preset") },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = SmokedAmber,
+                                        selectedLabelColor = CharcoalDeep
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = if (previewEarn > 0L) {
+                                    "Live Preview: Rs. 2,000 order earns $samplePtsOn2000 pts (worth ${formatPkr(sampleDiscount)} COD discount)"
+                                } else {
+                                    "Live Preview: Earning paused · Existing points redeem at ${formatPkr(previewVal)} per point"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = SmokedAmber
+                            )
+                            Text(
+                                text = "Issued Balances: $totalCustomerPts guest pts (${formatPkr(totalCustomerPts * previewVal)}) · $totalStaffPts staff pts",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    if (programError != null) {
+                        Text(programError!!, style = MaterialTheme.typography.bodySmall, color = CrimsonEmber)
+                    }
+
+                    if (effectiveRole == UserRoleTier.OWNER) {
+                        Button(
+                            onClick = {
+                                val earn = if (earnEnabled) (earnRateText.toLongOrNull() ?: -1L) else 0L
+                                val ptVal = pointValueText.toLongOrNull() ?: 0L
+                                when {
+                                    earnEnabled && earn !in 1L..100L -> programError = "Enter earn rate between 1 and 100 pts per Rs. 100."
+                                    ptVal !in 1L..500L -> programError = "Enter redemption value between Rs. 1 and Rs. 500 per point."
+                                    else -> {
+                                        programError = null
+                                        viewModel.updateLoyaltyProgramSettings(earn, ptVal)
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("save_loyalty_program_btn"),
+                            colors = ButtonDefaults.buttonColors(containerColor = SmokedAmber, contentColor = CharcoalDeep)
+                        ) {
+                            Text("Save Loyalty Program Rules", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            SectionHeader(
+                title = "Customer Loyalty Balances",
+                subtitle = "Grant bonus points or edit any guest's balance"
             )
         }
         if (customers.isEmpty()) {
@@ -307,25 +471,56 @@ fun OwnerLoyaltyAndStockTab(viewModel: RestaurantViewModel) {
         } else {
             items(customers, key = { it.userId }) { user ->
                 SmokedCard {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(user.displayName.ifBlank { "Guest" }, style = MaterialTheme.typography.titleSmall)
-                            Text(user.email.ifBlank { user.phone }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Text("${user.loyaltyPoints} pts", style = MonoPriceStyle, color = SmokedAmber)
-                        IconButton(
-                            onClick = { editingCustomerLoyalty = user },
-                            modifier = Modifier
-                                .size(48.dp)
-                                .testTag("edit_customer_loyalty_${user.userId}")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Filled.Edit, contentDescription = "Edit loyalty", tint = SmokedAmber)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(user.displayName.ifBlank { "Guest" }, style = MaterialTheme.typography.titleSmall)
+                                Text(user.email.ifBlank { user.phone }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("${user.loyaltyPoints} pts", style = MonoPriceStyle, color = SmokedAmber)
+                                Text(formatPkr(user.loyaltyPoints * currentPointVal), style = MaterialTheme.typography.labelSmall, color = CorianderGreen)
+                            }
+                        }
+                        if (effectiveRole == UserRoleTier.OWNER) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = { viewModel.editCustomerLoyalty(user, user.loyaltyPoints + 10L, "Quick +10 bonus from Admin") },
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                ) {
+                                    Text("+10 pts", color = CorianderGreen, style = MaterialTheme.typography.labelSmall)
+                                }
+                                OutlinedButton(
+                                    onClick = { viewModel.editCustomerLoyalty(user, user.loyaltyPoints + 50L, "VIP +50 bonus from Admin") },
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                ) {
+                                    Text("+50 pts", color = CorianderGreen, style = MaterialTheme.typography.labelSmall)
+                                }
+                                OutlinedButton(
+                                    onClick = { editingCustomerLoyalty = user },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("edit_customer_loyalty_${user.userId}"),
+                                    border = BorderStroke(1.dp, SmokedAmber),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                ) {
+                                    Text("Set Exact", color = SmokedAmber, style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
                         }
                     }
                 }
@@ -335,29 +530,50 @@ fun OwnerLoyaltyAndStockTab(viewModel: RestaurantViewModel) {
         if (staffList.isNotEmpty()) {
             item {
                 SectionHeader(
-                    title = "Staff Loyalty Rewards",
-                    subtitle = "Admin edit employee reward points"
+                    title = "Staff & Rider Loyalty Rewards",
+                    subtitle = "Admin edit employee & rider reward points"
                 )
             }
             items(staffList, key = { "stf_loy_${it.id}" }) { staff ->
                 SmokedCard {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("${staff.fullName} (${staff.staffId})", style = MaterialTheme.typography.titleSmall)
-                            Text("${staff.ordersHandledCount} orders handled", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Text("${staff.loyaltyPoints} pts", style = MonoPriceStyle, color = CorianderGreen)
-                        IconButton(
-                            onClick = { editingStaffLoyalty = staff },
-                            modifier = Modifier.size(48.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Filled.Edit, contentDescription = "Edit staff loyalty", tint = SmokedAmber)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("${staff.fullName} (${staff.staffId})", style = MaterialTheme.typography.titleSmall)
+                                Text("${staff.roleTier} · ${staff.ordersHandledCount} orders handled", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text("${staff.loyaltyPoints} pts", style = MonoPriceStyle, color = CorianderGreen)
+                        }
+                        if (effectiveRole == UserRoleTier.OWNER) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = { viewModel.editStaffLoyalty(staff, staff.loyaltyPoints + 25L, "Performance +25 bonus") },
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                ) {
+                                    Text("+25 Bonus", color = CorianderGreen, style = MaterialTheme.typography.labelSmall)
+                                }
+                                OutlinedButton(
+                                    onClick = { editingStaffLoyalty = staff },
+                                    modifier = Modifier.weight(1f),
+                                    border = BorderStroke(1.dp, SmokedAmber),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                ) {
+                                    Text("Edit Points", color = SmokedAmber, style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
                         }
                     }
                 }
