@@ -1,0 +1,304 @@
+{
+  "entities": {
+    "RestaurantConfig": {
+      "title": "RestaurantConfig",
+      "description": "Global configuration for Oak & Smoke Restaurant Hasilpur.",
+      "type": "object",
+      "properties": {
+        "restaurantName": { "type": "string", "description": "Display name of the restaurant." },
+        "currency": { "type": "string", "description": "Currency code (PKR)." },
+        "ownerUid": { "type": "string", "description": "Firebase UID of the initialized owner." },
+        "ownerInitialized": { "type": "boolean", "description": "Whether initial owner setup has completed." },
+        "autoPrintDailyReport": { "type": "boolean", "description": "Whether closing daily report prompts PrintManager automatically." },
+        "loyaltyEarnPer100Pkr": { "type": "integer", "description": "Loyalty points awarded per 100 PKR spent." },
+        "loyaltyPointValuePkr": { "type": "integer", "description": "PKR discount value of 1 loyalty point." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update." }
+      },
+      "required": ["restaurantName", "currency", "ownerUid", "ownerInitialized", "autoPrintDailyReport", "loyaltyEarnPer100Pkr", "loyaltyPointValuePkr", "createdAt", "updatedAt"]
+    },
+    "RoleGrant": {
+      "title": "RoleGrant",
+      "description": "Verified role grant binding a Firebase Auth UID to a Staff, Manager, or Owner permission tier.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "role": { "type": "string", "enum": ["RIDER", "STAFF", "MANAGER", "OWNER"] },
+        "staffDocId": { "type": "string" },
+        "staffId": { "type": "string" },
+        "credHash": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "role", "staffDocId", "staffId", "credHash", "createdAt", "updatedAt"]
+    },
+    "StaffCredential": {
+      "title": "StaffCredential",
+      "description": "Capability token keyed by SHA-256 hash of Staff ID and Passcode.",
+      "type": "object",
+      "properties": {
+        "staffDocId": { "type": "string" },
+        "staffId": { "type": "string" },
+        "roleTier": { "type": "string", "enum": ["RIDER", "STAFF", "MANAGER", "OWNER"] },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["staffDocId", "staffId", "roleTier", "active", "createdAt", "updatedAt"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Customer and user profile including contact details and loyalty points.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "deliveryAddress": { "type": "string" },
+        "roleLabel": { "type": "string", "enum": ["CUSTOMER", "RIDER", "STAFF", "MANAGER", "OWNER"] },
+        "loyaltyPoints": { "type": "integer" },
+        "notificationsEnabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "displayName", "email", "phone", "deliveryAddress", "roleLabel", "loyaltyPoints", "notificationsEnabled", "createdAt", "updatedAt"]
+    },
+    "MenuItem": {
+      "title": "MenuItem",
+      "description": "Dish in the Oak & Smoke Restaurant Hasilpur digital menu.",
+      "type": "object",
+      "properties": {
+        "catalogType": { "type": "string", "enum": ["MENU"] },
+        "name": { "type": "string" },
+        "category": { "type": "string", "enum": ["KARAHI", "BBQ", "PLATTERS", "NAAN_SIDES", "BEVERAGES"] },
+        "description": { "type": "string" },
+        "pricePkr": { "type": "integer" },
+        "imageKey": { "type": "string" },
+        "dailySpecial": { "type": "boolean" },
+        "available": { "type": "boolean" },
+        "spiceLevel": { "type": "string", "enum": ["MILD", "MEDIUM", "SPICY"] },
+        "prepMinutes": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["catalogType", "name", "category", "description", "pricePkr", "imageKey", "dailySpecial", "available", "spiceLevel", "prepMinutes", "createdAt", "updatedAt"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Cash on Delivery (COD) customer order with real-time fulfillment status.",
+      "type": "object",
+      "properties": {
+        "orderNumber": { "type": "string" },
+        "userId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "deliveryAddress": { "type": "string" },
+        "customerLat": { "type": "number" },
+        "customerLng": { "type": "number" },
+        "locationLabel": { "type": "string" },
+        "hasLocation": { "type": "boolean" },
+        "assignedRiderId": { "type": "string" },
+        "assignedRiderName": { "type": "string" },
+        "assignedRiderPhone": { "type": "string" },
+        "orderType": { "type": "string", "enum": ["COD_DELIVERY", "DINE_IN", "TAKEAWAY"] },
+        "tableLabel": { "type": "string" },
+        "itemsSummary": { "type": "string" },
+        "itemsDetail": { "type": "string" },
+        "itemCount": { "type": "integer" },
+        "subtotalPkr": { "type": "integer" },
+        "loyaltyPointsRedeemed": { "type": "integer" },
+        "discountPkr": { "type": "integer" },
+        "totalPkr": { "type": "integer" },
+        "paymentMethod": { "type": "string", "enum": ["COD", "CASH_COUNTER"] },
+        "status": { "type": "string", "enum": ["PLACED", "CONFIRMED", "GRILLING", "READY", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED"] },
+        "handledByStaffId": { "type": "string" },
+        "notes": { "type": "string" },
+        "dateKey": { "type": "string" },
+        "monthKey": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orderNumber", "userId", "customerName", "customerPhone", "deliveryAddress", "itemsSummary", "itemCount", "subtotalPkr", "loyaltyPointsRedeemed", "discountPkr", "totalPkr", "paymentMethod", "status", "handledByStaffId", "notes", "dateKey", "monthKey", "createdAt", "updatedAt"]
+    },
+    "Reservation": {
+      "title": "Reservation",
+      "description": "Table reservation at Oak & Smoke Restaurant Hasilpur.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "dateLabel": { "type": "string" },
+        "timeSlot": { "type": "string" },
+        "partySize": { "type": "integer" },
+        "seatingZone": { "type": "string", "enum": ["CHARCOAL_HALL", "FAMILY_CABIN", "OUTDOOR_LAWN"] },
+        "specialNotes": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "CONFIRMED", "SEATED", "COMPLETED", "CANCELLED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "customerName", "customerPhone", "dateLabel", "timeSlot", "partySize", "seatingZone", "specialNotes", "status", "createdAt", "updatedAt"]
+    },
+    "InventoryItem": {
+      "title": "InventoryItem",
+      "description": "Kitchen and BBQ ingredient or fuel stock item.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "category": { "type": "string", "enum": ["MEAT", "FUEL_CHARCOAL", "SPICES_OIL", "BREAD_DAIRY", "PACKAGING", "BEVERAGES"] },
+        "quantity": { "type": "integer" },
+        "unit": { "type": "string" },
+        "minThreshold": { "type": "integer" },
+        "unitCostPkr": { "type": "integer" },
+        "updatedByUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "category", "quantity", "unit", "minThreshold", "unitCostPkr", "updatedByUid", "createdAt", "updatedAt"]
+    },
+    "StaffMember": {
+      "title": "StaffMember",
+      "description": "Restaurant employee directory, role tier, schedule, salary, loyalty points, and performance metrics.",
+      "type": "object",
+      "properties": {
+        "staffId": { "type": "string" },
+        "fullName": { "type": "string" },
+        "roleTier": { "type": "string", "enum": ["RIDER", "STAFF", "MANAGER", "OWNER"] },
+        "phone": { "type": "string" },
+        "vehicleInfo": { "type": "string" },
+        "credHash": { "type": "string" },
+        "linkedUid": { "type": "string" },
+        "monthlySalaryPkr": { "type": "integer" },
+        "salaryStatus": { "type": "string", "enum": ["PAID", "PENDING"] },
+        "loyaltyPoints": { "type": "integer" },
+        "shiftSummary": { "type": "string" },
+        "scheduleDays": { "type": "string" },
+        "ordersHandledCount": { "type": "integer" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["staffId", "fullName", "roleTier", "credHash", "linkedUid", "monthlySalaryPkr", "salaryStatus", "loyaltyPoints", "shiftSummary", "scheduleDays", "ordersHandledCount", "active", "createdAt", "updatedAt"]
+    },
+    "ExpenseEntry": {
+      "title": "ExpenseEntry",
+      "description": "Daily and monthly restaurant operating expense in PKR.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "category": { "type": "string", "enum": ["INGREDIENTS", "CHARCOAL_FUEL", "UTILITIES", "SALARIES", "MAINTENANCE", "OTHER"] },
+        "amountPkr": { "type": "integer" },
+        "dateKey": { "type": "string" },
+        "monthKey": { "type": "string" },
+        "notes": { "type": "string" },
+        "recordedByUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "category", "amountPkr", "dateKey", "monthKey", "notes", "recordedByUid", "createdAt", "updatedAt"]
+    },
+    "FeedbackEntry": {
+      "title": "FeedbackEntry",
+      "description": "Customer feedback rating, review comment, and optional staff reply.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "rating": { "type": "integer" },
+        "category": { "type": "string", "enum": ["FOOD", "SERVICE", "DELIVERY", "AMBIANCE"] },
+        "comment": { "type": "string" },
+        "staffReply": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "customerName", "rating", "category", "comment", "staffReply", "createdAt", "updatedAt"]
+    },
+    "NotificationItem": {
+      "title": "NotificationItem",
+      "description": "Real-time notification alert for customer account activity, broadcasts, or staff updates.",
+      "type": "object",
+      "properties": {
+        "targetUid": { "type": "string" },
+        "audience": { "type": "string", "enum": ["USER", "BROADCAST", "STAFF", "RIDER"] },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["ORDER", "RESERVATION", "SPECIAL", "LOYALTY", "STAFF", "RIDER_READY"] },
+        "read": { "type": "boolean" },
+        "createdByUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["targetUid", "audience", "title", "message", "type", "read", "createdByUid", "createdAt"]
+    },
+    "DiningTable": {
+      "title": "DiningTable",
+      "description": "Admin-managed dining table, family cabin, or outdoor lawn table at Oak & Smoke Restaurant Hasilpur.",
+      "type": "object",
+      "properties": {
+        "catalogType": { "type": "string", "enum": ["TABLE"] },
+        "label": { "type": "string" },
+        "zone": { "type": "string", "enum": ["CHARCOAL_HALL", "FAMILY_CABIN", "OUTDOOR_LAWN"] },
+        "capacity": { "type": "integer" },
+        "available": { "type": "boolean" },
+        "displayOrder": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["catalogType", "label", "zone", "capacity", "available", "displayOrder", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/restaurantConfig/{configId}": {
+      "schema": { "$ref": "#/entities/RestaurantConfig" },
+      "description": "Singleton restaurant settings document at oak_and_smoke."
+    },
+    "/roleGrants/{userId}": {
+      "schema": { "$ref": "#/entities/RoleGrant" },
+      "description": "Role tier grants keyed by Firebase UID."
+    },
+    "/staffCredentials/{credHash}": {
+      "schema": { "$ref": "#/entities/StaffCredential" },
+      "description": "Hashed Staff ID + Passcode verification tokens."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Authenticated user profile, contact info, and loyalty balance."
+    },
+    "/menuItems/{itemId}": {
+      "schema": { "$ref": "#/entities/MenuItem" },
+      "description": "Editable Pakistani Karahi, BBQ, and Platter digital menu."
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/Order" },
+      "description": "Cash on Delivery orders with real-time kitchen and delivery statuses."
+    },
+    "/reservations/{reservationId}": {
+      "schema": { "$ref": "#/entities/Reservation" },
+      "description": "Customer table reservations."
+    },
+    "/inventory/{stockId}": {
+      "schema": { "$ref": "#/entities/InventoryItem" },
+      "description": "Kitchen and BBQ stock tracking."
+    },
+    "/staffMembers/{staffDocId}": {
+      "schema": { "$ref": "#/entities/StaffMember" },
+      "description": "Employee schedules, salaries, loyalty points, and performance."
+    },
+    "/expenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/ExpenseEntry" },
+      "description": "Daily and monthly restaurant expenses in PKR."
+    },
+    "/feedback/{feedbackId}": {
+      "schema": { "$ref": "#/entities/FeedbackEntry" },
+      "description": "Customer reviews and management responses."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/NotificationItem" },
+      "description": "Account-specific, broadcast, and staff real-time alerts."
+    },
+    "/diningTables/{tableId}": {
+      "schema": { "$ref": "#/entities/DiningTable" },
+      "description": "Admin-managed dining tables, cabins, and lawn tables."
+    }
+  }
+}

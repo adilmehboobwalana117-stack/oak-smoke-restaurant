@@ -1,0 +1,681 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL HARDENED PRIMITIVES ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isBootstrapAdmin() {
+      return isSignedIn() &&
+        'email_verified' in request.auth.token &&
+        request.auth.token.email_verified == true &&
+        'email' in request.auth.token &&
+        request.auth.token.email == 'adilmehboobwalana117@gmail.com';
+    }
+
+    function hasRoleGrant(allowedRoles) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/roleGrants/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/roleGrants/$(request.auth.uid)).data.role in allowedRoles;
+    }
+
+    function isOwner() {
+      return isBootstrapAdmin() || hasRoleGrant(['OWNER']);
+    }
+
+    function isManagerOrOwner() {
+      return isOwner() || hasRoleGrant(['MANAGER']);
+    }
+
+    function isStaffOrAbove() {
+      return isManagerOrOwner() || hasRoleGrant(['STAFF']);
+    }
+
+    function isRider() {
+      return hasRoleGrant(['RIDER']);
+    }
+
+    function isRiderOrStaff() {
+      return isStaffOrAbove() || isRider();
+    }
+
+    function isInitialOwnerSetupAfter() {
+      return isSignedIn() &&
+        !exists(/databases/$(database)/documents/restaurantConfig/oak_and_smoke) &&
+        existsAfter(/databases/$(database)/documents/restaurantConfig/oak_and_smoke) &&
+        getAfter(/databases/$(database)/documents/restaurantConfig/oak_and_smoke).data.ownerUid == request.auth.uid;
+    }
+
+    function isValidStaffCredentialProof(data) {
+      return data.credHash is string &&
+        isValidId(data.credHash) &&
+        exists(/databases/$(database)/documents/staffCredentials/$(data.credHash)) &&
+        get(/databases/$(database)/documents/staffCredentials/$(data.credHash)).data.active == true &&
+        get(/databases/$(database)/documents/staffCredentials/$(data.credHash)).data.roleTier == data.role &&
+        get(/databases/$(database)/documents/staffCredentials/$(data.credHash)).data.staffId == data.staffId &&
+        get(/databases/$(database)/documents/staffCredentials/$(data.credHash)).data.staffDocId == data.staffDocId;
+    }
+
+    // --- ENTITY VALIDATION BLUEPRINTS ---
+    function isValidRestaurantConfig(data) {
+      return data.keys().hasAll([
+          'restaurantName', 'currency', 'ownerUid', 'ownerInitialized',
+          'autoPrintDailyReport', 'loyaltyEarnPer100Pkr', 'loyaltyPointValuePkr',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'restaurantName', 'currency', 'ownerUid', 'ownerInitialized',
+          'autoPrintDailyReport', 'loyaltyEarnPer100Pkr', 'loyaltyPointValuePkr',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.restaurantName is string && data.restaurantName.size() >= 2 && data.restaurantName.size() <= 100 &&
+        data.currency == 'PKR' &&
+        data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+        data.ownerInitialized is bool &&
+        data.autoPrintDailyReport is bool &&
+        data.loyaltyEarnPer100Pkr is int && data.loyaltyEarnPer100Pkr >= 0 && data.loyaltyEarnPer100Pkr <= 100 &&
+        data.loyaltyPointValuePkr is int && data.loyaltyPointValuePkr >= 1 && data.loyaltyPointValuePkr <= 500 &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidRoleGrant(data) {
+      return data.keys().hasAll(['userId', 'role', 'staffDocId', 'staffId', 'credHash', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['userId', 'role', 'staffDocId', 'staffId', 'credHash', 'createdAt', 'updatedAt']) &&
+        data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+        data.role in ['RIDER', 'STAFF', 'MANAGER', 'OWNER'] &&
+        data.staffDocId is string && isValidId(data.staffDocId) &&
+        data.staffId is string && data.staffId.size() >= 2 && data.staffId.size() <= 32 &&
+        data.credHash is string && isValidId(data.credHash) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidStaffCredential(data) {
+      return data.keys().hasAll(['staffDocId', 'staffId', 'roleTier', 'active', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['staffDocId', 'staffId', 'roleTier', 'active', 'createdAt', 'updatedAt']) &&
+        data.staffDocId is string && isValidId(data.staffDocId) &&
+        data.staffId is string && data.staffId.size() >= 2 && data.staffId.size() <= 32 &&
+        data.roleTier in ['RIDER', 'STAFF', 'MANAGER', 'OWNER'] &&
+        data.active is bool &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll([
+          'userId', 'displayName', 'email', 'phone', 'deliveryAddress',
+          'roleLabel', 'loyaltyPoints', 'notificationsEnabled', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'displayName', 'email', 'phone', 'deliveryAddress',
+          'roleLabel', 'loyaltyPoints', 'notificationsEnabled', 'createdAt', 'updatedAt'
+        ]) &&
+        data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+        data.email is string && data.email.size() <= 160 &&
+        data.phone is string && data.phone.size() <= 30 &&
+        data.deliveryAddress is string && data.deliveryAddress.size() <= 240 &&
+        data.roleLabel in ['CUSTOMER', 'RIDER', 'STAFF', 'MANAGER', 'OWNER'] &&
+        data.loyaltyPoints is int && data.loyaltyPoints >= 0 && data.loyaltyPoints <= 1000000 &&
+        data.notificationsEnabled is bool &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidMenuItem(data) {
+      return data.keys().hasAll([
+          'catalogType', 'name', 'category', 'description', 'pricePkr',
+          'imageKey', 'dailySpecial', 'available', 'spiceLevel', 'prepMinutes',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'catalogType', 'name', 'category', 'description', 'pricePkr',
+          'imageKey', 'dailySpecial', 'available', 'spiceLevel', 'prepMinutes',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.catalogType == 'MENU' &&
+        data.name is string && data.name.size() >= 2 && data.name.size() <= 80 &&
+        data.category in ['KARAHI', 'BBQ', 'PLATTERS', 'NAAN_SIDES', 'BEVERAGES'] &&
+        data.description is string && data.description.size() <= 300 &&
+        data.pricePkr is int && data.pricePkr >= 50 && data.pricePkr <= 250000 &&
+        data.imageKey is string && data.imageKey.size() <= 60 &&
+        data.dailySpecial is bool &&
+        data.available is bool &&
+        data.spiceLevel in ['MILD', 'MEDIUM', 'SPICY'] &&
+        data.prepMinutes is int && data.prepMinutes >= 5 && data.prepMinutes <= 180 &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll([
+          'orderNumber', 'userId', 'customerName', 'customerPhone', 'deliveryAddress',
+          'itemsSummary', 'itemCount', 'subtotalPkr', 'loyaltyPointsRedeemed',
+          'discountPkr', 'totalPkr', 'paymentMethod', 'status', 'handledByStaffId',
+          'notes', 'dateKey', 'monthKey', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'orderNumber', 'userId', 'customerName', 'customerPhone', 'deliveryAddress',
+          'customerLat', 'customerLng', 'locationLabel', 'hasLocation',
+          'assignedRiderId', 'assignedRiderName', 'assignedRiderPhone',
+          'orderType', 'tableLabel', 'itemsSummary', 'itemsDetail', 'itemCount',
+          'subtotalPkr', 'loyaltyPointsRedeemed', 'discountPkr', 'totalPkr',
+          'paymentMethod', 'status', 'handledByStaffId', 'notes', 'dateKey',
+          'monthKey', 'createdAt', 'updatedAt'
+        ]) &&
+        data.orderNumber is string && data.orderNumber.size() >= 3 && data.orderNumber.size() <= 32 &&
+        data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+        data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 80 &&
+        data.customerPhone is string && data.customerPhone.size() <= 30 &&
+        data.deliveryAddress is string && data.deliveryAddress.size() <= 240 &&
+        (!('customerLat' in data) || (data.customerLat is number && data.customerLat >= -90 && data.customerLat <= 90)) &&
+        (!('customerLng' in data) || (data.customerLng is number && data.customerLng >= -180 && data.customerLng <= 180)) &&
+        (!('locationLabel' in data) || (data.locationLabel is string && data.locationLabel.size() <= 200)) &&
+        (!('hasLocation' in data) || data.hasLocation is bool) &&
+        (!('assignedRiderId' in data) || (data.assignedRiderId is string && data.assignedRiderId.size() <= 32)) &&
+        (!('assignedRiderName' in data) || (data.assignedRiderName is string && data.assignedRiderName.size() <= 80)) &&
+        (!('assignedRiderPhone' in data) || (data.assignedRiderPhone is string && data.assignedRiderPhone.size() <= 30)) &&
+        (!('orderType' in data) || data.orderType in ['COD_DELIVERY', 'DINE_IN', 'TAKEAWAY']) &&
+        (!('tableLabel' in data) || (data.tableLabel is string && data.tableLabel.size() <= 40)) &&
+        data.itemsSummary is string && data.itemsSummary.size() >= 2 && data.itemsSummary.size() <= 1000 &&
+        (!('itemsDetail' in data) || (data.itemsDetail is string && data.itemsDetail.size() <= 2000)) &&
+        data.itemCount is int && data.itemCount >= 1 && data.itemCount <= 100 &&
+        data.subtotalPkr is int && data.subtotalPkr >= 50 && data.subtotalPkr <= 1000000 &&
+        data.loyaltyPointsRedeemed is int && data.loyaltyPointsRedeemed >= 0 && data.loyaltyPointsRedeemed <= 100000 &&
+        data.discountPkr is int && data.discountPkr >= 0 && data.discountPkr <= data.subtotalPkr &&
+        data.totalPkr is int && data.totalPkr >= 0 && data.totalPkr <= 1000000 &&
+        data.paymentMethod in ['COD', 'CASH_COUNTER'] &&
+        data.status in ['PLACED', 'CONFIRMED', 'GRILLING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'] &&
+        data.handledByStaffId is string && data.handledByStaffId.size() <= 32 &&
+        data.notes is string && data.notes.size() <= 300 &&
+        data.dateKey is string && data.dateKey.size() == 10 &&
+        data.monthKey is string && data.monthKey.size() == 7 &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidReservation(data) {
+      return data.keys().hasAll([
+          'userId', 'customerName', 'customerPhone', 'dateLabel', 'timeSlot',
+          'partySize', 'seatingZone', 'specialNotes', 'status', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'customerName', 'customerPhone', 'dateLabel', 'timeSlot',
+          'partySize', 'seatingZone', 'specialNotes', 'status', 'createdAt', 'updatedAt'
+        ]) &&
+        data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+        data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 80 &&
+        data.customerPhone is string && data.customerPhone.size() >= 7 && data.customerPhone.size() <= 30 &&
+        data.dateLabel is string && data.dateLabel.size() >= 4 && data.dateLabel.size() <= 32 &&
+        data.timeSlot is string && data.timeSlot.size() >= 3 && data.timeSlot.size() <= 32 &&
+        data.partySize is int && data.partySize >= 1 && data.partySize <= 30 &&
+        data.seatingZone in ['CHARCOAL_HALL', 'FAMILY_CABIN', 'OUTDOOR_LAWN'] &&
+        data.specialNotes is string && data.specialNotes.size() <= 300 &&
+        data.status in ['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED', 'CANCELLED'] &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidInventoryItem(data) {
+      return data.keys().hasAll([
+          'name', 'category', 'quantity', 'unit', 'minThreshold',
+          'unitCostPkr', 'updatedByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'name', 'category', 'quantity', 'unit', 'minThreshold',
+          'unitCostPkr', 'updatedByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        data.name is string && data.name.size() >= 2 && data.name.size() <= 80 &&
+        data.category in ['MEAT', 'FUEL_CHARCOAL', 'SPICES_OIL', 'BREAD_DAIRY', 'PACKAGING', 'BEVERAGES'] &&
+        data.quantity is int && data.quantity >= 0 && data.quantity <= 100000 &&
+        data.unit is string && data.unit.size() >= 1 && data.unit.size() <= 24 &&
+        data.minThreshold is int && data.minThreshold >= 0 && data.minThreshold <= 10000 &&
+        data.unitCostPkr is int && data.unitCostPkr >= 0 && data.unitCostPkr <= 500000 &&
+        data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128 &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidStaffMember(data) {
+      return data.keys().hasAll([
+          'staffId', 'fullName', 'roleTier', 'credHash', 'linkedUid',
+          'monthlySalaryPkr', 'salaryStatus', 'loyaltyPoints', 'shiftSummary',
+          'scheduleDays', 'ordersHandledCount', 'active', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'staffId', 'fullName', 'roleTier', 'phone', 'vehicleInfo', 'credHash', 'linkedUid',
+          'monthlySalaryPkr', 'salaryStatus', 'loyaltyPoints', 'shiftSummary',
+          'scheduleDays', 'ordersHandledCount', 'active', 'createdAt', 'updatedAt'
+        ]) &&
+        data.staffId is string && data.staffId.size() >= 2 && data.staffId.size() <= 32 &&
+        data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 80 &&
+        data.roleTier in ['RIDER', 'STAFF', 'MANAGER', 'OWNER'] &&
+        (!('phone' in data) || (data.phone is string && data.phone.size() <= 30)) &&
+        (!('vehicleInfo' in data) || (data.vehicleInfo is string && data.vehicleInfo.size() <= 80)) &&
+        data.credHash is string && isValidId(data.credHash) &&
+        data.linkedUid is string && data.linkedUid.size() <= 128 &&
+        data.monthlySalaryPkr is int && data.monthlySalaryPkr >= 0 && data.monthlySalaryPkr <= 5000000 &&
+        data.salaryStatus in ['PAID', 'PENDING'] &&
+        data.loyaltyPoints is int && data.loyaltyPoints >= 0 && data.loyaltyPoints <= 1000000 &&
+        data.shiftSummary is string && data.shiftSummary.size() <= 120 &&
+        data.scheduleDays is string && data.scheduleDays.size() <= 160 &&
+        data.ordersHandledCount is int && data.ordersHandledCount >= 0 && data.ordersHandledCount <= 1000000 &&
+        data.active is bool &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidExpense(data) {
+      return data.keys().hasAll([
+          'title', 'category', 'amountPkr', 'dateKey', 'monthKey',
+          'notes', 'recordedByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'title', 'category', 'amountPkr', 'dateKey', 'monthKey',
+          'notes', 'recordedByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 100 &&
+        data.category in ['INGREDIENTS', 'CHARCOAL_FUEL', 'UTILITIES', 'SALARIES', 'MAINTENANCE', 'OTHER'] &&
+        data.amountPkr is int && data.amountPkr >= 1 && data.amountPkr <= 10000000 &&
+        data.dateKey is string && data.dateKey.size() == 10 &&
+        data.monthKey is string && data.monthKey.size() == 7 &&
+        data.notes is string && data.notes.size() <= 300 &&
+        data.recordedByUid is string && data.recordedByUid.size() >= 1 && data.recordedByUid.size() <= 128 &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidFeedback(data) {
+      return data.keys().hasAll([
+          'userId', 'customerName', 'rating', 'category', 'comment',
+          'staffReply', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'customerName', 'rating', 'category', 'comment',
+          'staffReply', 'createdAt', 'updatedAt'
+        ]) &&
+        data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+        data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 80 &&
+        data.rating is int && data.rating >= 1 && data.rating <= 5 &&
+        data.category in ['FOOD', 'SERVICE', 'DELIVERY', 'AMBIANCE'] &&
+        data.comment is string && data.comment.size() >= 2 && data.comment.size() <= 500 &&
+        data.staffReply is string && data.staffReply.size() <= 500 &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll([
+          'targetUid', 'audience', 'title', 'message', 'type', 'read', 'createdByUid', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'targetUid', 'audience', 'title', 'message', 'type', 'read', 'createdByUid', 'createdAt'
+        ]) &&
+        data.targetUid is string && data.targetUid.size() >= 1 && data.targetUid.size() <= 128 &&
+        data.audience in ['USER', 'BROADCAST', 'STAFF', 'RIDER'] &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 100 &&
+        data.message is string && data.message.size() >= 2 && data.message.size() <= 400 &&
+        data.type in ['ORDER', 'RESERVATION', 'SPECIAL', 'LOYALTY', 'STAFF', 'RIDER_READY'] &&
+        data.read is bool &&
+        data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidDiningTable(data) {
+      return data.keys().hasAll([
+          'catalogType', 'label', 'zone', 'capacity', 'available', 'displayOrder',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'catalogType', 'label', 'zone', 'capacity', 'available', 'displayOrder',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.catalogType == 'TABLE' &&
+        data.label is string && data.label.size() >= 2 && data.label.size() <= 40 &&
+        data.zone in ['CHARCOAL_HALL', 'FAMILY_CABIN', 'OUTDOOR_LAWN'] &&
+        data.capacity is int && data.capacity >= 1 && data.capacity <= 30 &&
+        data.available is bool &&
+        data.displayOrder is int && data.displayOrder >= 0 && data.displayOrder <= 1000 &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    // --- COLLECTION RULES ---
+
+    match /restaurantConfig/{configId} {
+      allow get: if isSignedIn() && isValidId(configId);
+      allow list: if false;
+      allow create: if isSignedIn() &&
+        configId == 'oak_and_smoke' &&
+        isValidRestaurantConfig(incoming()) &&
+        (isBootstrapAdmin() || (
+          !exists(/databases/$(database)/documents/restaurantConfig/oak_and_smoke) &&
+          incoming().ownerUid == request.auth.uid
+        ));
+      allow update: if isSignedIn() &&
+        configId == 'oak_and_smoke' &&
+        isValidRestaurantConfig(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        isOwner();
+      allow delete: if false;
+    }
+
+    match /roleGrants/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isOwner());
+      allow list: if isOwner();
+      allow create: if isSignedIn() &&
+        isValidId(userId) &&
+        isValidRoleGrant(incoming()) &&
+        (
+          isOwner() ||
+          (request.auth.uid == userId && incoming().userId == userId && incoming().role == 'OWNER' && isInitialOwnerSetupAfter()) ||
+          (request.auth.uid == userId && incoming().userId == userId && isValidStaffCredentialProof(incoming()))
+        );
+      allow update: if isSignedIn() &&
+        isValidId(userId) &&
+        isValidRoleGrant(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isOwner() ||
+          (request.auth.uid == userId && isValidStaffCredentialProof(incoming()))
+        );
+      allow delete: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isOwner());
+    }
+
+    match /staffCredentials/{credHash} {
+      allow get: if isSignedIn() && isValidId(credHash);
+      allow list: if isOwner();
+      allow create: if isSignedIn() &&
+        isValidId(credHash) &&
+        isValidStaffCredential(incoming()) &&
+        (isOwner() || isInitialOwnerSetupAfter());
+      allow update: if isSignedIn() &&
+        isValidId(credHash) &&
+        isValidStaffCredential(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        isOwner();
+      allow delete: if isSignedIn() && isValidId(credHash) && isOwner();
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isOwner());
+      allow list: if isOwner();
+      allow create: if isSignedIn() &&
+        isValidId(userId) &&
+        request.auth.uid == userId &&
+        incoming().userId == userId &&
+        incoming().loyaltyPoints == 0 &&
+        incoming().roleLabel == 'CUSTOMER' &&
+        isValidUserProfile(incoming());
+      allow update: if isSignedIn() &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isOwner() ||
+          (isRiderOrStaff() &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['loyaltyPoints', 'updatedAt']) &&
+            incoming().loyaltyPoints >= existing().loyaltyPoints) ||
+          (request.auth.uid == userId &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'phone', 'deliveryAddress', 'notificationsEnabled', 'updatedAt'])) ||
+          (request.auth.uid == userId &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['loyaltyPoints', 'updatedAt']) &&
+            incoming().loyaltyPoints < existing().loyaltyPoints &&
+            incoming().loyaltyPoints >= 0)
+        );
+      allow delete: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isOwner());
+    }
+
+    match /menuItems/{itemId} {
+      allow get: if isSignedIn() && isValidId(itemId);
+      allow list: if isSignedIn() && resource.data.catalogType == 'MENU';
+      allow create: if isSignedIn() &&
+        isValidId(itemId) &&
+        isValidMenuItem(incoming()) &&
+        (isManagerOrOwner() || isInitialOwnerSetupAfter());
+      allow update: if isSignedIn() &&
+        isValidId(itemId) &&
+        isValidMenuItem(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isManagerOrOwner() ||
+          (isStaffOrAbove() && incoming().diff(existing()).affectedKeys().hasOnly(['available', 'updatedAt']))
+        );
+      allow delete: if isSignedIn() && isValidId(itemId) && isOwner();
+    }
+
+    match /orders/{orderId} {
+      allow get: if isSignedIn() && isValidId(orderId) && (resource.data.userId == request.auth.uid || isRiderOrStaff());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isRiderOrStaff());
+      allow create: if isSignedIn() &&
+        isValidId(orderId) &&
+        incoming().userId == request.auth.uid &&
+        isValidOrder(incoming()) &&
+        (
+          (incoming().status == 'PLACED' &&
+            incoming().paymentMethod == 'COD' &&
+            incoming().customerPhone.size() >= 7 &&
+            incoming().deliveryAddress.size() >= 4 &&
+            'hasLocation' in incoming() && incoming().hasLocation == true &&
+            'customerLat' in incoming() && 'customerLng' in incoming()) ||
+          (isStaffOrAbove() &&
+            incoming().status in ['PLACED', 'CONFIRMED', 'GRILLING'] &&
+            incoming().paymentMethod in ['COD', 'CASH_COUNTER'])
+        );
+      allow update: if isSignedIn() &&
+        isValidId(orderId) &&
+        isValidOrder(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isOwner() ||
+          (isStaffOrAbove() &&
+            existing().status != 'DELIVERED' &&
+            existing().status != 'CANCELLED' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'handledByStaffId', 'assignedRiderId', 'assignedRiderName', 'assignedRiderPhone', 'updatedAt'])) ||
+          (isRider() &&
+            existing().status in ['READY', 'OUT_FOR_DELIVERY'] &&
+            incoming().status in ['OUT_FOR_DELIVERY', 'DELIVERED'] &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'handledByStaffId', 'assignedRiderId', 'assignedRiderName', 'assignedRiderPhone', 'updatedAt'])) ||
+          (existing().userId == request.auth.uid &&
+            existing().status == 'PLACED' &&
+            incoming().status == 'CANCELLED' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+        );
+      allow delete: if isSignedIn() && isValidId(orderId) && isOwner();
+    }
+
+    match /reservations/{reservationId} {
+      allow get: if isSignedIn() && isValidId(reservationId) && (resource.data.userId == request.auth.uid || isStaffOrAbove());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isStaffOrAbove());
+      allow create: if isSignedIn() &&
+        isValidId(reservationId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().status == 'PENDING' &&
+        isValidReservation(incoming());
+      allow update: if isSignedIn() &&
+        isValidId(reservationId) &&
+        isValidReservation(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isOwner() ||
+          (isStaffOrAbove() &&
+            existing().status != 'COMPLETED' &&
+            existing().status != 'CANCELLED' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+          (existing().userId == request.auth.uid &&
+            existing().status in ['PENDING', 'CONFIRMED'] &&
+            incoming().status == 'CANCELLED' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+        );
+      allow delete: if isSignedIn() && isValidId(reservationId) && isOwner();
+    }
+
+    match /inventory/{stockId} {
+      allow get: if isSignedIn() && isValidId(stockId) && isStaffOrAbove();
+      allow list: if isStaffOrAbove();
+      allow create: if isSignedIn() &&
+        isValidId(stockId) &&
+        isValidInventoryItem(incoming()) &&
+        (isManagerOrOwner() || isInitialOwnerSetupAfter());
+      allow update: if isSignedIn() &&
+        isValidId(stockId) &&
+        isValidInventoryItem(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isManagerOrOwner() ||
+          (isStaffOrAbove() &&
+            incoming().updatedByUid == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['quantity', 'updatedByUid', 'updatedAt']))
+        );
+      allow delete: if isSignedIn() && isValidId(stockId) && isOwner();
+    }
+
+    match /staffMembers/{staffDocId} {
+      allow get: if isSignedIn() && isValidId(staffDocId) && (isManagerOrOwner() || resource.data.linkedUid == request.auth.uid);
+      allow list: if isSignedIn() && (isManagerOrOwner() || resource.data.linkedUid == request.auth.uid);
+      allow create: if isSignedIn() &&
+        isValidId(staffDocId) &&
+        isValidStaffMember(incoming()) &&
+        (isOwner() || isInitialOwnerSetupAfter());
+      allow update: if isSignedIn() &&
+        isValidId(staffDocId) &&
+        isValidStaffMember(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isOwner() ||
+          (isRiderOrStaff() &&
+            existing().linkedUid == request.auth.uid &&
+            incoming().ordersHandledCount == existing().ordersHandledCount + 1 &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['ordersHandledCount', 'updatedAt'])) ||
+          (isRiderOrStaff() &&
+            incoming().linkedUid == request.auth.uid &&
+            get(/databases/$(database)/documents/roleGrants/$(request.auth.uid)).data.staffDocId == staffDocId &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['linkedUid', 'updatedAt']))
+        );
+      allow delete: if isSignedIn() && isValidId(staffDocId) && isOwner();
+    }
+
+    match /expenses/{expenseId} {
+      allow get: if isSignedIn() && isValidId(expenseId) && isManagerOrOwner();
+      allow list: if isManagerOrOwner();
+      allow create: if isSignedIn() &&
+        isValidId(expenseId) &&
+        incoming().recordedByUid == request.auth.uid &&
+        isValidExpense(incoming()) &&
+        isManagerOrOwner();
+      allow update: if isSignedIn() &&
+        isValidId(expenseId) &&
+        isValidExpense(incoming()) &&
+        incoming().recordedByUid == existing().recordedByUid &&
+        incoming().createdAt == existing().createdAt &&
+        isOwner();
+      allow delete: if isSignedIn() && isValidId(expenseId) && isOwner();
+    }
+
+    match /feedback/{feedbackId} {
+      allow get: if isSignedIn() && isValidId(feedbackId) && (resource.data.userId == request.auth.uid || isStaffOrAbove());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isStaffOrAbove());
+      allow create: if isSignedIn() &&
+        isValidId(feedbackId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().staffReply == '' &&
+        isValidFeedback(incoming());
+      allow update: if isSignedIn() &&
+        isValidId(feedbackId) &&
+        isValidFeedback(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isOwner() ||
+          (isStaffOrAbove() && incoming().diff(existing()).affectedKeys().hasOnly(['staffReply', 'updatedAt'])) ||
+          (existing().userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['rating', 'comment', 'updatedAt']))
+        );
+      allow delete: if isSignedIn() && isValidId(feedbackId) && (existing().userId == request.auth.uid || isOwner());
+    }
+
+    match /notifications/{notificationId} {
+      allow get: if isSignedIn() && isValidId(notificationId) && (
+        resource.data.targetUid == request.auth.uid ||
+        resource.data.audience == 'BROADCAST' ||
+        (resource.data.audience == 'STAFF' && isStaffOrAbove()) ||
+        (resource.data.audience == 'RIDER' && isRiderOrStaff()) ||
+        isOwner()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.targetUid == request.auth.uid ||
+        resource.data.audience == 'BROADCAST' ||
+        (resource.data.audience == 'STAFF' && isStaffOrAbove()) ||
+        (resource.data.audience == 'RIDER' && isRiderOrStaff()) ||
+        isOwner()
+      );
+      allow create: if isSignedIn() &&
+        isValidId(notificationId) &&
+        incoming().createdByUid == request.auth.uid &&
+        isValidNotification(incoming()) &&
+        (
+          isRiderOrStaff() ||
+          (incoming().audience == 'STAFF' && incoming().type in ['ORDER', 'RESERVATION']) ||
+          (incoming().audience == 'USER' && incoming().targetUid == request.auth.uid)
+        );
+      allow update: if isSignedIn() &&
+        isValidId(notificationId) &&
+        isValidNotification(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().createdByUid == existing().createdByUid &&
+        (
+          isOwner() ||
+          ((existing().targetUid == request.auth.uid ||
+              (existing().audience == 'STAFF' && isStaffOrAbove()) ||
+              (existing().audience == 'RIDER' && isRiderOrStaff())) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['read']))
+        );
+      allow delete: if isSignedIn() && isValidId(notificationId) && (existing().targetUid == request.auth.uid || isOwner());
+    }
+
+    match /diningTables/{tableId} {
+      allow get: if isSignedIn() && isValidId(tableId);
+      allow list: if isSignedIn() && resource.data.catalogType == 'TABLE';
+      allow create: if isSignedIn() &&
+        isValidId(tableId) &&
+        isValidDiningTable(incoming()) &&
+        (isManagerOrOwner() || isInitialOwnerSetupAfter());
+      allow update: if isSignedIn() &&
+        isValidId(tableId) &&
+        isValidDiningTable(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isManagerOrOwner() ||
+          (isStaffOrAbove() && incoming().diff(existing()).affectedKeys().hasOnly(['available', 'updatedAt']))
+        );
+      allow delete: if isSignedIn() && isValidId(tableId) && isManagerOrOwner();
+    }
+  }
+}

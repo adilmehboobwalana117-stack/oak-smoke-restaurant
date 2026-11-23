@@ -1,0 +1,6 @@
+{
+  "name": "Oak & Smoke",
+  "description": "Digital menu, table reservations, COD ordering, offline-capable staff operations, loyalty rewards, and financial analytics for Oak & Smoke Restaurant Hasilpur.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
