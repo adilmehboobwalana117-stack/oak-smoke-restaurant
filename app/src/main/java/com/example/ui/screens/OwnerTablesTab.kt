@@ -126,6 +126,42 @@ fun OwnerTablesTab(viewModel: RestaurantViewModel) {
             }
         }
 
+        if (tables.size in 1..24) {
+            item {
+                SmokedCard(borderColor = SmokedAmber.copy(alpha = 0.7f)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Expand Floor to 25 Tables",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = SmokedAmber
+                            )
+                            Text(
+                                text = "Currently ${tables.size}/25 tables. Tap to add remaining Charcoal Hall (15), Family Cabins (5) & Outdoor Lawn (5).",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Button(
+                            onClick = { viewModel.seedStarterTables() },
+                            enabled = !isBusy,
+                            colors = ButtonDefaults.buttonColors(containerColor = SmokedAmber, contentColor = CharcoalDeep),
+                            modifier = Modifier.testTag("load_all_25_tables_btn")
+                        ) {
+                            Text("Load 25", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
         if (tables.isEmpty()) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

@@ -37,9 +37,9 @@ import java.io.FileOutputStream
 
 enum class AppDownloadTarget(val label: String, val url: String, val description: String) {
     WEB_PWA(
-        label = "Web PWA",
+        label = "PC & Web PWA",
         url = AppPwaQrService.PWA_APP_URL,
-        description = "Open in Chrome or Safari & tap 'Install App' / 'Add to Home Screen'."
+        description = "Open on Windows/Mac/Chromebook (Chrome or Edge) or Mobile & click 'Install App' to run Oak & Smoke as a standalone PC & Web App with offline support."
     ),
     PLAY_TESTER(
         label = "Tester Opt-In",

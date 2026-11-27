@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#14110F" />
+  <title>Oak &amp; Smoke Restaurant Hasilpur — PC &amp; Web App (POS · Kitchen · Admin · Menu)</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  <style>
+    :root {
+      --bg: #14110F;
+      --surface: #1E1916;
+      --surface-2: #27201C;
+      --border: #3B3028;
+      --text: #F6EFE7;
+      --muted: #B8AA9C;
+      --amber: #E69445;
+      --copper: #D16B3A;
+      --green: #4CAF79;
+      --red: #D9534F;
+      --dark-ink: #14110F;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 30;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand img { width: 38px; height: 38px; border-radius: 10px; }
+    .brand h1 { margin: 0; font-size: 18px; line-height: 1.2; }
+    .brand small { color: var(--amber); font-size: 12px; font-weight: 600; }
+    .header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 700;
+      border: 1px solid var(--border); background: var(--surface-2);
+    }
+    .pill.online { border-color: rgba(76,175,121,0.55); color: var(--green); background: rgba(76,175,121,0.12); }
+    .pill.offline { border-color: rgba(209,107,58,0.65); color: var(--copper); background: rgba(209,107,58,0.16); }
+    .pill.amber { border-color: rgba(230,148,69,0.55); color: var(--amber); background: rgba(230,148,69,0.14); }
+    button, .btn {
+      font: inherit; cursor: pointer; border-radius: 10px;
+      padding: 9px 14px; font-weight: 700; font-size: 13px;
+      border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+      transition: transform 0.08s ease, background 0.15s ease;
+    }
+    button:hover { background: #332A24; }
+    button:active { transform: scale(0.98); }
+    .btn-primary { background: var(--amber); color: var(--dark-ink); border-color: var(--amber); }
+    .btn-primary:hover { background: #F0A358; }
+    .btn-green { background: var(--green); color: var(--dark-ink); border-color: var(--green); }
+    .btn-copper { background: var(--copper); color: var(--dark-ink); border-color: var(--copper); }
+    .btn-danger { background: transparent; color: var(--red); border-color: var(--red); }
+    .btn-sm { padding: 6px 10px; font-size: 12px; border-radius: 8px; }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 230px 1fr;
+      flex: 1;
+      min-height: calc(100vh - 61px);
+    }
+    aside {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 16px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .nav-btn {
+      text-align: left; padding: 12px 14px; border-radius: 12px;
+      background: transparent; border: 1px solid transparent; color: var(--muted);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .nav-btn.active {
+      background: rgba(230,148,69,0.16); color: var(--amber); border-color: rgba(230,148,69,0.45);
+    }
+    .nav-footer {
+      margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border);
+      font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 6px;
+    }
+    .nav-footer a { color: var(--amber); text-decoration: none; }
+    main { padding: 18px; overflow-y: auto; max-width: 1440px; width: 100%; }
+
+    .pos-grid {
+      display: grid;
+      grid-template-columns: 1.5fr 0.95fr;
+      gap: 16px;
+      align-items: start;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+    }
+    .card h2, .card h3 { margin: 0 0 8px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+    .chip {
+      padding: 6px 11px; border-radius: 999px; font-size: 12px; font-weight: 600;
+      border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+      cursor: pointer;
+    }
+    .chip.active { background: var(--amber); color: var(--dark-ink); border-color: var(--amber); }
+    .chip.copper.active { background: var(--copper); color: var(--dark-ink); border-color: var(--copper); }
+
+    .input-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin-top: 10px; }
+    input, select, textarea {
+      width: 100%; padding: 9px 11px; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--bg); color: var(--text);
+      font: inherit; font-size: 13px;
+    }
+    input:focus, select:focus { outline: none; border-color: var(--amber); }
+
+    .dish-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; margin-top: 12px; }
+    .dish-card {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 14px; padding: 13px; display: flex; flex-direction: column; gap: 8px;
+    }
+    .dish-card.in-cart { border-color: var(--amber); }
+    .dish-top { display: flex; justify-content: space-between; align-items: start; gap: 8px; }
+    .price { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; color: var(--amber); }
+    .variety-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    .v-btn {
+      padding: 6px 8px; border-radius: 8px; font-size: 11px; font-weight: 600; text-align: left;
+      border: 1px solid var(--border); background: var(--surface); color: var(--text);
+      display: flex; justify-content: space-between; gap: 4px;
+    }
+    .v-btn.active { background: var(--amber); color: var(--dark-ink); border-color: var(--amber); }
+    .qty-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
+    .qty-controls { display: flex; align-items: center; gap: 6px; }
+
+    .ticket-panel { position: sticky; top: 76px; display: flex; flex-direction: column; gap: 12px; }
+    .ticket-items { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto; }
+    .ticket-line {
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+      padding: 8px 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+    .kpi .val { font-family: ui-monospace, monospace; font-size: 22px; font-weight: 800; color: var(--amber); margin-top: 4px; }
+
+    .kot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 14px; }
+    .kot-line { display: flex; gap: 10px; align-items: center; padding: 5px 0; border-bottom: 1px dashed var(--border); }
+    .kot-qty { background: rgba(230,148,69,0.2); color: var(--amber); font-weight: 800; padding: 2px 8px; border-radius: 6px; font-family: monospace; }
+
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.72);
+      display: none; align-items: center; justify-content: center; padding: 16px; z-index: 60;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--surface); border: 1px solid var(--amber); border-radius: 16px;
+      padding: 20px; max-width: 520px; width: 100%; max-height: 90vh; overflow-y: auto;
+    }
+    .toast {
+      position: fixed; bottom: 18px; right: 18px; background: var(--amber); color: var(--dark-ink);
+      padding: 11px 16px; border-radius: 12px; font-weight: 700; font-size: 13px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.45); display: none; z-index: 80;
+    }
+    .toast.show { display: block; }
+
+    #print-area { display: none; }
+    @media print {
+      body > *:not(#print-area) { display: none !important; }
+      #print-area {
+        display: block !important;
+        color: #000 !important;
+        background: #fff !important;
+        font-family: monospace;
+        padding: 12px;
+        max-width: 360px;
+      }
+    }
+    @media (max-width: 960px) {
+      .layout { grid-template-columns: 1fr; }
+      aside { flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--border); padding: 10px; }
+      .nav-footer { display: none; }
+      .pos-grid { grid-template-columns: 1fr; }
+      .ticket-panel { position: static; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <img src="./icon.svg" alt="Oak &amp; Smoke Logo" />
+      <div>
+        <h1>Oak &amp; Smoke Restaurant Hasilpur</h1>
+        <small>PC &amp; Web App · 25 Tables · 4 Varieties · Offline &amp; Online POS</small>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span id="net-pill" class="pill online">● Online · Offline Ready</span>
+      <span id="queue-pill" class="pill amber" style="display:none">0 Pending Sync</span>
+      <button id="install-pc-btn" class="btn-primary">⬇ Install on PC</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside>
+      <button class="nav-btn active" data-portal="pos"><span>🔥 Staff Counter POS</span><span class="pill amber" id="badge-tables">25</span></button>
+      <button class="nav-btn" data-portal="kitchen"><span>🍳 Kitchen Display (KOT)</span><span class="pill amber" id="badge-kot">0</span></button>
+      <button class="nav-btn" data-portal="admin"><span>📊 Owner Admin Portal</span></button>
+      <button class="nav-btn" data-portal="customer"><span>🍽️ Customer Digital Menu</span></button>
+      <div class="nav-footer">
+        <div><strong>PC Offline Storage:</strong> Active</div>
+        <div>Install via Chrome/Edge for Start Menu &amp; Desktop icon.</div>
+        <a href="./index.html">Google Play Privacy Policy</a>
+      </div>
+    </aside>
+
+    <main id="portal-root"></main>
+  </div>
+
+  <div id="modal-backdrop" class="modal-backdrop">
+    <div class="modal" id="modal-body"></div>
+  </div>
+  <div id="toast" class="toast"></div>
+  <div id="print-area"></div>
+
+  <script>
+    const STORAGE_KEYS = {
+      MENU: 'oak_smoke_pc_menu_v1',
+      TABLES: 'oak_smoke_pc_tables_v1',
+      ORDERS: 'oak_smoke_pc_orders_v1',
+      EXPENSES: 'oak_smoke_pc_expenses_v1'
+    };
+
+    const STARTER_MENU = [
+      { id: 'dish_mutton_karahi', name: 'Oak Smoked Mutton Karahi', category: 'KARAHI', desc: 'Tender goat simmered in fresh tomatoes, ginger & green chilies over oak embers.', available: true, special: true, varieties: [ {label:'Quarter (250g)', price:1950}, {label:'Half (500g)', price:2850}, {label:'Full (1 Kg)', price:5200}, {label:'Family Handi (1.5 Kg)', price:7400} ] },
+      { id: 'dish_chicken_karahi', name: 'Desi Chicken Makhni Karahi', category: 'KARAHI', desc: 'Bone-in chicken finished with desi butter, crushed black pepper & fresh coriander.', available: true, special: false, varieties: [ {label:'Quarter', price:1150}, {label:'Half (500g)', price:1750}, {label:'Full (1 Kg)', price:3250}, {label:'Desi Ghee Special', price:3650} ] },
+      { id: 'dish_white_karahi', name: 'Peshawari Charsi White Karahi', category: 'KARAHI', desc: 'Creamy yogurt, white pepper & char-grilled lamb infused with oak smoke.', available: true, special: false, varieties: [ {label:'Quarter', price:1650}, {label:'Half', price:2450}, {label:'Full (1 Kg)', price:4600}, {label:'Family Handi', price:6500} ] },
+      { id: 'dish_royal_platter', name: 'Hasilpur Royal Oak BBQ Platter', category: 'PLATTERS', desc: 'Seekh Kebabs, Malai Boti, Chicken Tikka, Lamb Chops, Kabuli Pulao & Roghni Naan.', available: true, special: true, varieties: [ {label:'Couple (2p)', price:2650}, {label:'Family (4p)', price:4200}, {label:'Grand (6p)', price:6200}, {label:'Dastarkhwan (10p)', price:9800} ] },
+      { id: 'dish_seekh_kebabs', name: 'Charcoal Beef Seekh Kebabs', category: 'BBQ', desc: 'Hand-minced spiced beef skewers flame-roasted over glowing oak wood.', available: true, special: false, varieties: [ {label:'Half (4 Skewers)', price:720}, {label:'Regular (6 Skewers)', price:1050}, {label:'Full Dozen (12)', price:1980}, {label:'Cheese Stuffed (6)', price:1280} ] },
+      { id: 'dish_malai_boti', name: 'Smoked Chicken Malai Boti', category: 'BBQ', desc: 'Velvety cream and green cardamom marinated boneless cubes grilled crisp.', available: true, special: false, varieties: [ {label:'Half (6 pcs)', price:890}, {label:'Full (12 pcs)', price:1350}, {label:'Cheese Malai (12 pcs)', price:1580}, {label:'Family Pack (20 pcs)', price:2450} ] },
+      { id: 'dish_lamb_chops', name: 'Oak-Fired Mutton Chops', category: 'BBQ', desc: 'Juicy rib chops glazed with black pepper, lemon & smoky tandoori crust.', available: true, special: true, varieties: [ {label:'4 Pieces', price:1750}, {label:'6 Pieces', price:2450}, {label:'8 Pieces', price:3150}, {label:'12 Pieces Family', price:4550} ] },
+      { id: 'dish_roghni_naan', name: 'Tandoori Roghni & Garlic Naan', category: 'NAAN_SIDES', desc: 'Fresh clay-oven naan brushed with sesame butter and roasted garlic.', available: true, special: false, varieties: [ {label:'Plain Tandoori (2)', price:120}, {label:'Roghni Naan (2)', price:180}, {label:'Garlic Butter (2)', price:240}, {label:'Cheese Naan (2)', price:420} ] },
+      { id: 'dish_mint_raita', name: 'Fresh Mint Raita & Kachumber', category: 'NAAN_SIDES', desc: 'Chilled house yogurt blended with green chilies, cumin & crisp salad.', available: true, special: false, varieties: [ {label:'Single Cup', price:150}, {label:'Standard Bowl', price:250}, {label:'Large Bowl', price:420}, {label:'Family Jug + Salad', price:680} ] },
+      { id: 'dish_mint_margarita', name: 'Hasilpur Mint Margarita & Lassi', category: 'BEVERAGES', desc: 'Frosty crushed mint lime cooler or traditional sweet clay-cup lassi.', available: true, special: false, varieties: [ {label:'Regular Glass', price:280}, {label:'Large Glass', price:380}, {label:'Sweet Lassi Glass', price:340}, {label:'Family Pitcher (1.5L)', price:980} ] }
+    ];
+
+    function build25StarterTables() {
+      const list = [];
+      for (let i = 1; i <= 15; i++) {
+        list.push({ id: `tbl_${i}`, label: `Table ${i}`, zone: 'CHARCOAL_HALL', capacity: i % 3 === 0 ? 6 : 4, available: true });
+      }
+      for (let i = 1; i <= 5; i++) {
+        list.push({ id: `tbl_${15 + i}`, label: `Family Cabin ${i}`, zone: 'FAMILY_CABIN', capacity: i >= 4 ? 10 : 8, available: true });
+      }
+      for (let i = 1; i <= 5; i++) {
+        list.push({ id: `tbl_${20 + i}`, label: `Outdoor Lawn ${i}`, zone: 'OUTDOOR_LAWN', capacity: 6, available: true });
+      }
+      return list;
+    }
+
+    const ZONES = {
+      CHARCOAL_HALL: 'Charcoal Main Hall',
+      FAMILY_CABIN: 'Family Cabin',
+      OUTDOOR_LAWN: 'Outdoor Grill Lawn'
+    };
+
+    const CATEGORIES = {
+      KARAHI: 'Karahi',
+      BBQ: 'Smoked BBQ',
+      PLATTERS: 'Platters',
+      NAAN_SIDES: 'Naan & Sides',
+      BEVERAGES: 'Beverages'
+    };
+
+    function loadJson(key, fallback) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return fallback;
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) && parsed.length ? parsed : fallback;
+      } catch {
+        return fallback;
+      }
+    }
+
+    const state = {
+      portal: (location.hash || '#pos').replace('#', '') || 'pos',
+      menu: loadJson(STORAGE_KEYS.MENU, STARTER_MENU),
+      tables: loadJson(STORAGE_KEYS.TABLES, build25StarterTables()),
+      orders: loadJson(STORAGE_KEYS.ORDERS, []),
+      expenses: loadJson(STORAGE_KEYS.EXPENSES, []),
+      // POS transient state
+      orderType: 'DINE_IN',
+      zoneFilter: 'ALL',
+      tableLabel: 'Table 1',
+      customerName: '',
+      customerPhone: '',
+      deliveryAddress: '',
+      notes: '',
+      search: '',
+      category: 'ALL',
+      selectedVarietyByDish: {},
+      posCart: {}, // key: "dishId::varietyLabel" -> qty
+      custCart: {},
+      custSearch: '',
+      custCategory: 'ALL'
+    };
+
+    function saveAll() {
+      localStorage.setItem(STORAGE_KEYS.MENU, JSON.stringify(state.menu));
+      localStorage.setItem(STORAGE_KEYS.TABLES, JSON.stringify(state.tables));
+      localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(state.orders));
+      localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(state.expenses));
+    }
+
+    function fmtPkr(n) {
+      return 'Rs. ' + Number(n || 0).toLocaleString('en-PK');
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => el.classList.remove('show'), 3200);
+    }
+
+    function cartKey(dishId, varietyLabel) {
+      return `${dishId}::${varietyLabel}`;
+    }
+
+    function resolveLines(cartMap) {
+      const lines = [];
+      for (const [key, qty] of Object.entries(cartMap)) {
+        if (qty <= 0) continue;
+        const [dishId, vLabel] = key.split('::');
+        const dish = state.menu.find(d => d.id === dishId);
+        if (!dish) continue;
+        const v = (dish.varieties || []).find(x => x.label === vLabel) || dish.varieties[0];
+        lines.push({
+          key,
+          dishId,
+          name: `${dish.name} (${v.label})`,
+          qty,
+          unitPrice: v.price,
+          lineTotal: v.price * qty
+        });
+      }
+      return lines;
+    }
+
+    function updateNetworkBadge() {
+      const online = navigator.onLine;
+      const pill = document.getElementById('net-pill');
+      pill.className = 'pill ' + (online ? 'online' : 'offline');
+      pill.textContent = online ? '● Online · Offline Ready' : '● Offline Mode · Saving Locally';
+
+      const pendingCount = state.orders.filter(o => o.pendingSync).length;
+      const qPill = document.getElementById('queue-pill');
+      if (online && pendingCount > 0) {
+        // Mark locally queued orders synced once online returns
+        state.orders.forEach(o => { if (o.pendingSync) o.pendingSync = false; });
+        saveAll();
+        showToast(`Synced ${pendingCount} offline order(s) successfully!`);
+      }
+      const remaining = state.orders.filter(o => o.pendingSync).length;
+      qPill.style.display = remaining > 0 ? 'inline-flex' : 'none';
+      qPill.textContent = `${remaining} Offline Queued`;
+
+      document.getElementById('badge-tables').textContent = state.tables.filter(t => t.available).length;
+      document.getElementById('badge-kot').textContent = state.orders.filter(o => ['PLACED','GRILLING','READY'].includes(o.status)).length;
+    }
+
+    function printDocument(html) {
+      const area = document.getElementById('print-area');
+      area.innerHTML = html;
+      window.print();
+    }
+
+    function printKot(order) {
+      const rows = order.lines.map(l => `<tr><td style="font-weight:bold;padding:4px 8px 4px 0;">${l.qty}x</td><td style="padding:4px 0;">${escapeHtml(l.name)}</td></tr>`).join('');
+      printDocument(`
+        <h2 style="text-align:center;margin:0;">OAK &amp; SMOKE HASILPUR</h2>
+        <div style="text-align:center;font-weight:bold;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8px;">KITCHEN ORDER TICKET (KOT)</div>
+        <div><strong>Order:</strong> ${escapeHtml(order.orderNumber)}</div>
+        <div><strong>Type:</strong> ${escapeHtml(order.orderType)} ${order.tableLabel ? '· ' + escapeHtml(order.tableLabel) : ''}</div>
+        <div><strong>Time:</strong> ${new Date(order.createdAt).toLocaleString()}</div>
+        ${order.notes ? `<div style="margin-top:6px;padding:6px;border:1px solid #000;"><strong>NOTE:</strong> ${escapeHtml(order.notes)}</div>` : ''}
+        <hr/>
+        <table style="width:100%;border-collapse:collapse;font-size:15px;">${rows}</table>
+        <hr/>
+        <div style="text-align:center;font-size:11px;">KITCHEN COPY — NO PRICES SHOWN</div>
+      `);
+    }
+
+    function printBill(order) {
+      const rows = order.lines.map(l => `
+        <tr>
+          <td style="padding:4px 0;">${l.qty}x ${escapeHtml(l.name)}</td>
+          <td style="text-align:right;padding:4px 0;">${fmtPkr(l.lineTotal)}</td>
+        </tr>`).join('');
+      printDocument(`
+        <h2 style="text-align:center;margin:0;">OAK &amp; SMOKE RESTAURANT</h2>
+        <div style="text-align:center;font-size:12px;">Hasilpur, Pakistan · Authentic Karahi &amp; Smoked BBQ</div>
+        <div style="text-align:center;font-weight:bold;border-bottom:2px solid #000;padding:6px 0;margin-bottom:8px;">CUSTOMER BILL RECEIPT</div>
+        <div><strong>Bill #:</strong> ${escapeHtml(order.orderNumber)}</div>
+        <div><strong>Type:</strong> ${escapeHtml(order.orderType)} ${order.tableLabel ? '· ' + escapeHtml(order.tableLabel) : ''}</div>
+        ${order.customerName ? `<div><strong>Guest:</strong> ${escapeHtml(order.customerName)}</div>` : ''}
+        ${order.customerPhone ? `<div><strong>Phone:</strong> ${escapeHtml(order.customerPhone)}</div>` : ''}
+        ${order.deliveryAddress ? `<div><strong>Address:</strong> ${escapeHtml(order.deliveryAddress)}</div>` : ''}
+        <div><strong>Date:</strong> ${new Date(order.createdAt).toLocaleString()}</div>
+        <hr/>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">${rows}</table>
+        <hr/>
+        <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:bold;">
+          <span>TOTAL PAYABLE (CASH/COD)</span>
+          <span>${fmtPkr(order.totalPkr)}</span>
+        </div>
+        <hr/>
+        <div style="text-align:center;font-size:11px;">Thank you for dining at Oak &amp; Smoke Hasilpur!</div>
+      `);
+    }
+
+    function escapeHtml(str) {
+      return String(str || '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+    }
+
+    function renderPos() {
+      const activeTables = state.tables.filter(t => t.available);
+      const visibleTables = state.zoneFilter === 'ALL'
+        ? activeTables
+        : activeTables.filter(t => t.zone === state.zoneFilter);
+
+      const visibleMenu = state.menu.filter(d => {
+        const catOk = state.category === 'ALL' || d.category === state.category;
+        const q = state.search.trim().toLowerCase();
+        const qOk = !q || d.name.toLowerCase().includes(q) || d.varieties.some(v => v.label.toLowerCase().includes(q));
+        return d.available && catOk && qOk;
+      });
+
+      const lines = resolveLines(state.posCart);
+      const totalItems = lines.reduce((s, l) => s + l.qty, 0);
+      const totalPkr = lines.reduce((s, l) => s + l.lineTotal, 0);
+
+      return `
+        <div class="pos-grid">
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div class="card">
+              <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                <div>
+                  <h2>Staff Counter POS (Online &amp; Offline)</h2>
+                  <div class="muted">Select order type, pick from ${activeTables.length} tables, choose 1 of 4 varieties per dish, and fire straight to Kitchen.</div>
+                </div>
+              </div>
+              <div class="chip-row">
+                ${['DINE_IN','TAKEAWAY','COD_DELIVERY'].map(t => `
+                  <button class="chip ${state.orderType === t ? 'active' : ''}" onclick="setOrderType('${t}')">
+                    ${t === 'DINE_IN' ? 'Dine-In' : t === 'TAKEAWAY' ? 'Takeaway' : 'Phone COD'}
+                  </button>
+                `).join('')}
+              </div>
+
+              ${state.orderType === 'DINE_IN' ? `
+                <div style="margin-top:8px;">
+                  <div class="muted" style="font-weight:700;color:var(--amber);">25 Dining Tables &amp; Cabins — Filter by Zone:</div>
+                  <div class="chip-row">
+                    <button class="chip ${state.zoneFilter === 'ALL' ? 'active' : ''}" onclick="setZoneFilter('ALL')">All (${activeTables.length})</button>
+                    ${Object.entries(ZONES).map(([k, lbl]) => {
+                      const c = activeTables.filter(t => t.zone === k).length;
+                      return `<button class="chip ${state.zoneFilter === k ? 'active' : ''}" onclick="setZoneFilter('${k}')">${lbl} (${c})</button>`;
+                    }).join('')}
+                  </div>
+                  <div class="chip-row" style="max-height:132px;overflow-y:auto;padding:4px 0;">
+                    ${visibleTables.map(t => `
+                      <button class="chip copper ${state.tableLabel === t.label ? 'active' : ''}" onclick="selectTable('${escapeHtml(t.label)}')">
+                        ${escapeHtml(t.label)} (${t.capacity}p)
+                      </button>
+                    `).join('')}
+                  </div>
+                </div>
+              ` : ''}
+
+              <div class="input-grid">
+                <input placeholder="Customer Name (optional)" value="${escapeHtml(state.customerName)}" oninput="state.customerName=this.value" />
+                <input placeholder="Phone ${state.orderType==='COD_DELIVERY'?'(required)':'(optional)'}" value="${escapeHtml(state.customerPhone)}" oninput="state.customerPhone=this.value" />
+                ${state.orderType === 'COD_DELIVERY' ? `<input placeholder="Hasilpur Delivery Address (required)" value="${escapeHtml(state.deliveryAddress)}" oninput="state.deliveryAddress=this.value" />` : ''}
+                <input placeholder="Kitchen Notes (spice level, serve order)" value="${escapeHtml(state.notes)}" oninput="state.notes=this.value" />
+              </div>
+            </div>
+
+            <div class="card">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+                <h3>Menu Catalog (4 Varieties Each)</h3>
+                <input style="max-width:280px;" placeholder="Search dish or variety..." value="${escapeHtml(state.search)}" oninput="state.search=this.value;render()" />
+              </div>
+              <div class="chip-row">
+                <button class="chip ${state.category === 'ALL' ? 'active' : ''}" onclick="state.category='ALL';render()">All</button>
+                ${Object.entries(CATEGORIES).map(([k, lbl]) => `
+                  <button class="chip ${state.category === k ? 'active' : ''}" onclick="state.category='${k}';render()">${lbl}</button>
+                `).join('')}
+              </div>
+              <div class="dish-list">
+                ${visibleMenu.map(dish => {
+                  const selIdx = state.selectedVarietyByDish[dish.id] || 0;
+                  const activeV = dish.varieties[selIdx] || dish.varieties[0];
+                  const k = cartKey(dish.id, activeV.label);
+                  const qty = state.posCart[k] || 0;
+                  const totalForDish = dish.varieties.reduce((s, v) => s + (state.posCart[cartKey(dish.id, v.label)] || 0), 0);
+                  return `
+                    <div class="dish-card ${totalForDish > 0 ? 'in-cart' : ''}">
+                      <div class="dish-top">
+                        <div>
+                          <div style="font-weight:700;font-size:14px;">${escapeHtml(dish.name)}</div>
+                          <div class="muted" style="font-size:11px;">${CATEGORIES[dish.category] || dish.category}</div>
+                        </div>
+                        <span class="price">${fmtPkr(activeV.price)}</span>
+                      </div>
+                      <div class="variety-grid">
+                        ${dish.varieties.map((v, idx) => {
+                          const vq = state.posCart[cartKey(dish.id, v.label)] || 0;
+                          return `
+                            <button class="v-btn ${idx === selIdx ? 'active' : ''}" onclick="selectDishVariety('${dish.id}', ${idx})">
+                              <span>${escapeHtml(v.label)}${vq > 0 ? ` [${vq}]` : ''}</span>
+                              <span>${v.price}</span>
+                            </button>`;
+                        }).join('')}
+                      </div>
+                      <div class="qty-bar">
+                        <span class="muted" style="font-size:12px;">Selected: <strong>${escapeHtml(activeV.label)}</strong></span>
+                        <div class="qty-controls">
+                          ${qty > 0 ? `<button class="btn-sm" onclick="updateCart('posCart','${escapeHtml(k)}',-1)">−</button><strong>${qty}</strong>` : ''}
+                          <button class="btn-sm btn-primary" onclick="updateCart('posCart','${escapeHtml(k)}',1)">+ Add</button>
+                        </div>
+                      </div>
+                    </div>`;
+                }).join('')}
+              </div>
+            </div>
+          </div>
+
+          <div class="card ticket-panel">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <h2 style="color:var(--amber);">Live Order Ticket</h2>
+                <div class="muted">${state.orderType === 'DINE_IN' ? 'Dine-In · ' + escapeHtml(state.tableLabel) : state.orderType}</div>
+              </div>
+              ${lines.length ? `<button class="btn-sm btn-danger" onclick="state.posCart={};render()">Clear</button>` : ''}
+            </div>
+
+            <div class="ticket-items">
+              ${lines.length === 0 ? `<div class="muted" style="padding:24px 0;text-align:center;">Pick a variety and tap <strong>+ Add</strong> on any dish to build this order.</div>` : lines.map(l => `
+                <div class="ticket-line">
+                  <div>
+                    <div style="font-weight:700;">${escapeHtml(l.name)}</div>
+                    <div class="price" style="font-size:12px;">${l.qty} × ${fmtPkr(l.unitPrice)} = ${fmtPkr(l.lineTotal)}</div>
+                  </div>
+                  <div class="qty-controls">
+                    <button class="btn-sm" onclick="updateCart('posCart','${escapeHtml(l.key)}',-1)">−</button>
+                    <strong>${l.qty}</strong>
+                    <button class="btn-sm btn-primary" onclick="updateCart('posCart','${escapeHtml(l.key)}',1)">+</button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+
+            <div style="border-top:1px solid var(--border);padding-top:12px;display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <div class="muted">${totalItems} item(s)</div>
+                <div style="font-weight:700;">Payable Total</div>
+              </div>
+              <div class="price" style="font-size:22px;">${fmtPkr(totalPkr)}</div>
+            </div>
+
+            <button class="btn-primary" style="width:100%;padding:13px;" ${lines.length === 0 ? 'disabled' : ''} onclick="submitPosOrder()">
+              🔥 ${navigator.onLine ? 'Send Direct to Kitchen & Print' : 'Save Offline to Kitchen & Print'}
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderKitchen() {
+      const active = state.orders.filter(o => ['PLACED','GRILLING','READY'].includes(o.status));
+      return `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+          <div>
+            <h2 style="margin:0;">Kitchen Display (KOT Only — No Prices)</h2>
+            <div class="muted">${active.length} active kitchen ticket(s) · Works fully offline and online</div>
+          </div>
+        </div>
+        ${active.length === 0 ? `
+          <div class="card" style="text-align:center;padding:42px;">
+            <h3>Kitchen queue is clear</h3>
+            <p class="muted">Orders created in Staff Counter POS or Customer Menu appear here immediately with dish varieties and quantities only.</p>
+          </div>
+        ` : `
+          <div class="kot-grid">
+            ${active.map(o => `
+              <div class="card" style="border-color:${o.status==='READY'?'var(--green)':o.status==='GRILLING'?'var(--copper)':'var(--amber)'};">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                  <div>
+                    <strong style="color:var(--amber);font-family:monospace;font-size:16px;">${escapeHtml(o.orderNumber)}</strong>
+                    <div class="muted">${escapeHtml(o.orderType)} ${o.tableLabel ? '· ' + escapeHtml(o.tableLabel) : ''}</div>
+                  </div>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    ${o.pendingSync ? `<span class="pill offline">OFFLINE</span>` : ''}
+                    <span class="pill amber">${o.status}</span>
+                  </div>
+                </div>
+                ${o.lines.map(l => `
+                  <div class="kot-line">
+                    <span class="kot-qty">${l.qty}x</span>
+                    <strong>${escapeHtml(l.name)}</strong>
+                  </div>
+                `).join('')}
+                ${o.notes ? `<div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(209,107,58,0.16);color:var(--amber);font-size:12px;">Note: ${escapeHtml(o.notes)}</div>` : ''}
+                <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+                  ${o.status === 'PLACED' ? `<button class="btn-copper" style="flex:1;" onclick="advanceOrder('${o.id}','GRILLING')">Start Grilling</button>` : ''}
+                  ${o.status === 'GRILLING' ? `<button class="btn-green" style="flex:1;" onclick="advanceOrder('${o.id}','READY')">Mark Ready</button>` : ''}
+                  ${o.status === 'READY' ? `<button class="btn-primary" style="flex:1;" onclick="advanceOrder('${o.id}','DELIVERED')">Complete &amp; Paid</button>` : ''}
+                  <button onclick="printKotById('${o.id}')">🖨 Print KOT</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `}
+      `;
+    }
+
+    function renderAdmin() {
+      const completed = state.orders.filter(o => o.status === 'DELIVERED');
+      const totalSales = completed.reduce((s, o) => s + o.totalPkr, 0);
+      const totalExpenses = state.expenses.reduce((s, e) => s + e.amountPkr, 0);
+      const netProfit = totalSales - totalExpenses;
+      const activeOrders = state.orders.filter(o => !['DELIVERED','CANCELLED'].includes(o.status)).length;
+
+      return `
+        <div class="kpi-grid">
+          <div class="kpi"><div class="muted">Completed Sales</div><div class="val">${fmtPkr(totalSales)}</div><div class="muted">${completed.length} paid orders</div></div>
+          <div class="kpi"><div class="muted">Operating Expenses</div><div class="val" style="color:var(--red);">${fmtPkr(totalExpenses)}</div><div class="muted">${state.expenses.length} entries</div></div>
+          <div class="kpi"><div class="muted">Net Profit</div><div class="val" style="color:${netProfit>=0?'var(--green)':'var(--red)'};">${fmtPkr(netProfit)}</div><div class="muted">Live PC Ledger</div></div>
+          <div class="kpi"><div class="muted">Active Orders / Tables</div><div class="val">${activeOrders} / ${state.tables.length}</div><div class="muted">25-Table Floor</div></div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+            <div>
+              <h3>Menu &amp; 4-Variety Rate Studio (${state.menu.length} Dishes)</h3>
+              <div class="muted">Add dishes, edit all 4 variety names &amp; PKR rates, or remove items.</div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn-primary" onclick="openDishModal(null)">+ Add 4-Variety Dish</button>
+              <button onclick="exportCsvReport()">⬇ Export Sales CSV</button>
+            </div>
+          </div>
+          <div class="dish-list">
+            ${state.menu.map(d => {
+              const prices = d.varieties.map(v => v.price);
+              const range = `${fmtPkr(Math.min(...prices))} – ${fmtPkr(Math.max(...prices))}`;
+              return `
+                <div class="dish-card">
+                  <div class="dish-top">
+                    <div>
+                      <strong>${escapeHtml(d.name)}</strong>
+                      <div class="muted" style="font-size:12px;">${CATEGORIES[d.category] || d.category} · ${d.varieties.length} varieties</div>
+                    </div>
+                    <span class="price" style="font-size:12px;">${range}</span>
+                  </div>
+                  <div class="muted" style="font-size:12px;">${d.varieties.map(v => `${escapeHtml(v.label)}: ${v.price}`).join(' · ')}</div>
+                  <div style="display:flex;gap:6px;margin-top:4px;">
+                    <button class="btn-sm" onclick="openDishModal('${d.id}')">Edit 4 Varieties</button>
+                    <button class="btn-sm btn-danger" onclick="deleteDish('${d.id}')">Remove</button>
+                  </div>
+                </div>`;
+            }).join('')}
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+            <div>
+              <h3>25 Dining Tables &amp; Cabins Manager (${state.tables.length} Tables)</h3>
+              <div class="muted">Charcoal Main Hall (15), Family Cabins (5), Outdoor Grill Lawn (5).</div>
+            </div>
+            <button class="btn-primary" onclick="reset25Tables()">Reset / Load All 25 Tables</button>
+          </div>
+          <div class="chip-row">
+            ${state.tables.map(t => `
+              <button class="chip ${t.available ? 'active' : ''}" onclick="toggleTable('${t.id}')">
+                ${escapeHtml(t.label)} (${t.capacity}p) ${t.available ? '✓' : 'Paused'}
+              </button>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+            <h3>Recent Orders &amp; Bills (${state.orders.length})</h3>
+            <button class="btn-sm" onclick="openExpenseModal()">+ Log Expense</button>
+          </div>
+          ${state.orders.length === 0 ? `<p class="muted">No orders recorded yet on this PC.</p>` : `
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">
+              ${state.orders.slice(0, 15).map(o => `
+                <div class="ticket-line">
+                  <div>
+                    <strong>${escapeHtml(o.orderNumber)}</strong> · ${escapeHtml(o.orderType)} ${o.tableLabel ? '· ' + escapeHtml(o.tableLabel) : ''} · <span class="pill amber">${o.status}</span>
+                    <div class="muted">${o.lines.map(l => `${l.qty}x ${escapeHtml(l.name)}`).join(', ')}</div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <span class="price">${fmtPkr(o.totalPkr)}</span>
+                    <button class="btn-sm" onclick="printKotById('${o.id}')">KOT</button>
+                    <button class="btn-sm btn-primary" onclick="printBillById('${o.id}')">Bill</button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+      `;
+    }
+
+    function renderCustomer() {
+      const visibleMenu = state.menu.filter(d => {
+        const catOk = state.custCategory === 'ALL' || d.category === state.custCategory;
+        const q = state.custSearch.trim().toLowerCase();
+        const qOk = !q || d.name.toLowerCase().includes(q) || d.desc.toLowerCase().includes(q);
+        return d.available && catOk && qOk;
+      });
+      const lines = resolveLines(state.custCart);
+      const total = lines.reduce((s, l) => s + l.lineTotal, 0);
+
+      return `
+        <div class="pos-grid">
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+              <div>
+                <h2>Oak &amp; Smoke Digital Menu (Hasilpur)</h2>
+                <div class="muted">Authentic Pakistani Karahi, Smoked BBQ &amp; Platters · Choose from 4 varieties per dish · Cash on Delivery</div>
+              </div>
+              <input style="max-width:260px;" placeholder="Search menu..." value="${escapeHtml(state.custSearch)}" oninput="state.custSearch=this.value;render()" />
+            </div>
+            <div class="chip-row">
+              <button class="chip ${state.custCategory === 'ALL' ? 'active' : ''}" onclick="state.custCategory='ALL';render()">All Menu</button>
+              ${Object.entries(CATEGORIES).map(([k, lbl]) => `
+                <button class="chip ${state.custCategory === k ? 'active' : ''}" onclick="state.custCategory='${k}';render()">${lbl}</button>
+              `).join('')}
+            </div>
+            <div class="dish-list">
+              ${visibleMenu.map(dish => {
+                const selIdx = state.selectedVarietyByDish['c_' + dish.id] || 0;
+                const activeV = dish.varieties[selIdx] || dish.varieties[0];
+                const k = cartKey(dish.id, activeV.label);
+                const qty = state.custCart[k] || 0;
+                return `
+                  <div class="dish-card">
+                    <div class="dish-top">
+                      <div>
+                        <strong>${escapeHtml(dish.name)}</strong>
+                        <div class="muted" style="font-size:12px;">${escapeHtml(dish.desc)}</div>
+                      </div>
+                      <span class="price">${fmtPkr(activeV.price)}</span>
+                    </div>
+                    <div class="variety-grid">
+                      ${dish.varieties.map((v, idx) => `
+                        <button class="v-btn ${idx === selIdx ? 'active' : ''}" onclick="selectDishVariety('c_${dish.id}', ${idx})">
+                          <span>${escapeHtml(v.label)}</span>
+                          <span>${v.price}</span>
+                        </button>`).join('')}
+                    </div>
+                    <div class="qty-bar">
+                      <span class="muted" style="font-size:12px;">${escapeHtml(activeV.label)}</span>
+                      <div class="qty-controls">
+                        ${qty > 0 ? `<button class="btn-sm" onclick="updateCart('custCart','${escapeHtml(k)}',-1)">−</button><strong>${qty}</strong>` : ''}
+                        <button class="btn-sm btn-primary" onclick="updateCart('custCart','${escapeHtml(k)}',1)">+ Add to COD Cart</button>
+                      </div>
+                    </div>
+                  </div>`;
+              }).join('')}
+            </div>
+          </div>
+
+          <div class="card ticket-panel">
+            <h2 style="color:var(--amber);">Customer COD Cart</h2>
+            <div class="ticket-items">
+              ${lines.length === 0 ? `<div class="muted">Your COD cart is empty. Pick a dish variety to add items.</div>` : lines.map(l => `
+                <div class="ticket-line">
+                  <div>
+                    <strong>${escapeHtml(l.name)}</strong>
+                    <div class="price" style="font-size:12px;">${l.qty} × ${fmtPkr(l.unitPrice)} = ${fmtPkr(l.lineTotal)}</div>
+                  </div>
+                  <div class="qty-controls">
+                    <button class="btn-sm" onclick="updateCart('custCart','${escapeHtml(l.key)}',-1)">−</button>
+                    <strong>${l.qty}</strong>
+                    <button class="btn-sm btn-primary" onclick="updateCart('custCart','${escapeHtml(l.key)}',1)">+</button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+            <div style="border-top:1px solid var(--border);padding-top:10px;display:flex;justify-content:space-between;">
+              <strong>COD Payable</strong>
+              <span class="price" style="font-size:20px;">${fmtPkr(total)}</span>
+            </div>
+            <div class="input-grid" style="grid-template-columns:1fr;">
+              <input id="cust-name" placeholder="Your Full Name" />
+              <input id="cust-phone" placeholder="Mobile Number (e.g. 0300-1234567)" />
+              <input id="cust-addr" placeholder="Hasilpur Delivery Address" />
+            </div>
+            <button class="btn-primary" ${lines.length===0?'disabled':''} onclick="submitCustomerCodOrder()">Place Cash on Delivery Order</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function render() {
+      document.querySelectorAll('.nav-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.portal === state.portal);
+      });
+      const root = document.getElementById('portal-root');
+      if (state.portal === 'kitchen') root.innerHTML = renderKitchen();
+      else if (state.portal === 'admin') root.innerHTML = renderAdmin();
+      else if (state.portal === 'customer') root.innerHTML = renderCustomer();
+      else root.innerHTML = renderPos();
+      updateNetworkBadge();
+    }
+
+    // Actions
+    window.setOrderType = (t) => { state.orderType = t; render(); };
+    window.setZoneFilter = (z) => { state.zoneFilter = z; render(); };
+    window.selectTable = (lbl) => { state.tableLabel = lbl; render(); };
+    window.selectDishVariety = (dishId, idx) => { state.selectedVarietyByDish[dishId] = idx; render(); };
+    window.updateCart = (cartName, key, delta) => {
+      const next = (state[cartName][key] || 0) + delta;
+      if (next <= 0) delete state[cartName][key];
+      else state[cartName][key] = next;
+      render();
+    };
+
+    window.submitPosOrder = () => {
+      const lines = resolveLines(state.posCart);
+      if (!lines.length) return;
+      if (state.orderType === 'COD_DELIVERY' && (state.customerPhone.trim().length < 7 || state.deliveryAddress.trim().length < 4)) {
+        showToast('Enter customer phone & Hasilpur address for Phone COD.');
+        return;
+      }
+      const order = {
+        id: 'ord_' + Date.now(),
+        orderNumber: 'OS-' + String(Math.floor(1000 + Math.random() * 9000)),
+        orderType: state.orderType,
+        tableLabel: state.orderType === 'DINE_IN' ? state.tableLabel : '',
+        customerName: state.customerName.trim() || (state.orderType === 'DINE_IN' ? state.tableLabel : 'Walk-In Guest'),
+        customerPhone: state.customerPhone.trim(),
+        deliveryAddress: state.orderType === 'COD_DELIVERY' ? state.deliveryAddress.trim() : '',
+        notes: state.notes.trim(),
+        lines,
+        totalPkr: lines.reduce((s, l) => s + l.lineTotal, 0),
+        status: 'PLACED',
+        pendingSync: !navigator.onLine,
+        createdAt: Date.now()
+      };
+      state.orders.unshift(order);
+      state.posCart = {};
+      state.customerName = '';
+      state.customerPhone = '';
+      state.deliveryAddress = '';
+      state.notes = '';
+      saveAll();
+      render();
+      openPostOrderModal(order);
+    };
+
+    window.submitCustomerCodOrder = () => {
+      const lines = resolveLines(state.custCart);
+      if (!lines.length) return;
+      const name = (document.getElementById('cust-name')?.value || '').trim();
+      const phone = (document.getElementById('cust-phone')?.value || '').trim();
+      const addr = (document.getElementById('cust-addr')?.value || '').trim();
+      if (phone.length < 7 || addr.length < 4) {
+        showToast('Please enter your phone number and Hasilpur delivery address.');
+        return;
+      }
+      const order = {
+        id: 'ord_' + Date.now(),
+        orderNumber: 'OS-' + String(Math.floor(1000 + Math.random() * 9000)),
+        orderType: 'COD_DELIVERY',
+        tableLabel: '',
+        customerName: name || 'Hasilpur Customer',
+        customerPhone: phone,
+        deliveryAddress: addr,
+        notes: 'Customer Web App COD Order',
+        lines,
+        totalPkr: lines.reduce((s, l) => s + l.lineTotal, 0),
+        status: 'PLACED',
+        pendingSync: !navigator.onLine,
+        createdAt: Date.now()
+      };
+      state.orders.unshift(order);
+      state.custCart = {};
+      saveAll();
+      showToast(`COD Order ${order.orderNumber} sent to Oak & Smoke Kitchen!`);
+      render();
+    };
+
+    window.advanceOrder = (id, status) => {
+      const o = state.orders.find(x => x.id === id);
+      if (!o) return;
+      o.status = status;
+      saveAll();
+      showToast(`${o.orderNumber} → ${status}`);
+      render();
+    };
+
+    window.printKotById = (id) => {
+      const o = state.orders.find(x => x.id === id);
+      if (o) printKot(o);
+    };
+    window.printBillById = (id) => {
+      const o = state.orders.find(x => x.id === id);
+      if (o) printBill(o);
+    };
+
+    window.toggleTable = (id) => {
+      const t = state.tables.find(x => x.id === id);
+      if (t) { t.available = !t.available; saveAll(); render(); }
+    };
+    window.reset25Tables = () => {
+      state.tables = build25StarterTables();
+      saveAll();
+      showToast('All 25 Oak & Smoke tables loaded!');
+      render();
+    };
+
+    window.deleteDish = (id) => {
+      state.menu = state.menu.filter(d => d.id !== id);
+      saveAll();
+      showToast('Dish removed from menu.');
+      render();
+    };
+
+    function openModal(html) {
+      document.getElementById('modal-body').innerHTML = html;
+      document.getElementById('modal-backdrop').classList.add('open');
+    }
+    window.closeModal = () => document.getElementById('modal-backdrop').classList.remove('open');
+
+    function openPostOrderModal(order) {
+      openModal(`
+        <h2 style="color:var(--green);margin-top:0;">✓ Order ${escapeHtml(order.orderNumber)} Created</h2>
+        <div class="pill ${order.pendingSync ? 'offline' : 'online'}" style="margin-bottom:10px;">
+          ${order.pendingSync ? 'Saved Offline · Auto-Syncs Online' : 'Sent Direct to Kitchen'}
+        </div>
+        <p>${order.lines.map(l => `${l.qty}x ${escapeHtml(l.name)}`).join('<br/>')}</p>
+        <p class="price" style="font-size:18px;">Total: ${fmtPkr(order.totalPkr)}</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
+          <button class="btn-copper" style="flex:1;" onclick="printKotById('${order.id}')">🖨 Print KOT (Kitchen Only)</button>
+          <button class="btn-primary" style="flex:1;" onclick="printBillById('${order.id}')">🧾 Print Customer Bill</button>
+        </div>
+        <div style="margin-top:12px;text-align:right;">
+          <button onclick="closeModal()">Done / New Order</button>
+        </div>
+      `);
+    }
+
+    window.openDishModal = (dishId) => {
+      const d = dishId ? state.menu.find(x => x.id === dishId) : null;
+      const vs = d ? d.varieties : [
+        { label: 'Regular', price: 950 },
+        { label: 'Half', price: 1450 },
+        { label: 'Full', price: 2450 },
+        { label: 'Family', price: 3850 }
+      ];
+      openModal(`
+        <h2 style="margin-top:0;">${d ? 'Edit Dish & 4 Varieties' : 'Add Dish (4 Varieties)'}</h2>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <input id="m-name" placeholder="Dish Name" value="${escapeHtml(d?.name || '')}" />
+          <select id="m-cat">
+            ${Object.entries(CATEGORIES).map(([k, lbl]) => `<option value="${k}" ${d?.category===k?'selected':''}>${lbl}</option>`).join('')}
+          </select>
+          <input id="m-desc" placeholder="Short description" value="${escapeHtml(d?.desc || '')}" />
+          <strong style="color:var(--amber);margin-top:4px;">4 Product Varieties (Name + PKR Price)</strong>
+          ${[0,1,2,3].map(i => `
+            <div style="display:grid;grid-template-columns:1.3fr 0.8fr;gap:6px;">
+              <input id="m-vl-${i}" placeholder="Variety ${i+1} Name" value="${escapeHtml(vs[i]?.label || '')}" />
+              <input id="m-vp-${i}" type="number" placeholder="PKR" value="${vs[i]?.price || ''}" />
+            </div>
+          `).join('')}
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+          <button onclick="closeModal()">Cancel</button>
+          <button class="btn-primary" onclick="saveDishFromModal('${dishId || ''}')">Save Dish</button>
+        </div>
+      `);
+    };
+
+    window.saveDishFromModal = (dishId) => {
+      const name = document.getElementById('m-name').value.trim();
+      const cat = document.getElementById('m-cat').value;
+      const desc = document.getElementById('m-desc').value.trim();
+      const varieties = [];
+      for (let i = 0; i < 4; i++) {
+        const lbl = document.getElementById(`m-vl-${i}`).value.trim();
+        const price = parseInt(document.getElementById(`m-vp-${i}`).value, 10);
+        if (lbl && price >= 50) varieties.push({ label: lbl, price });
+      }
+      if (name.length < 2 || !varieties.length) {
+        showToast('Enter a dish name and at least 1 variety with price >= Rs. 50.');
+        return;
+      }
+      if (dishId) {
+        const idx = state.menu.findIndex(x => x.id === dishId);
+        if (idx >= 0) state.menu[idx] = { ...state.menu[idx], name, category: cat, desc, varieties };
+      } else {
+        state.menu.unshift({ id: 'dish_' + Date.now(), name, category: cat, desc, available: true, special: false, varieties });
+      }
+      saveAll();
+      closeModal();
+      showToast(`Saved ${name} (${varieties.length} varieties).`);
+      render();
+    };
+
+    window.openExpenseModal = () => {
+      openModal(`
+        <h2 style="margin-top:0;">Log Operating Expense</h2>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <input id="e-title" placeholder="Expense Title (e.g. Oak Charcoal, Mutton)" />
+          <input id="e-amt" type="number" placeholder="Amount (PKR)" />
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+          <button onclick="closeModal()">Cancel</button>
+          <button class="btn-primary" onclick="saveExpenseFromModal()">Save Expense</button>
+        </div>
+      `);
+    };
+
+    window.saveExpenseFromModal = () => {
+      const title = document.getElementById('e-title').value.trim();
+      const amountPkr = parseInt(document.getElementById('e-amt').value, 10) || 0;
+      if (title.length < 2 || amountPkr <= 0) { showToast('Enter valid expense title and PKR amount.'); return; }
+      state.expenses.unshift({ id: 'exp_' + Date.now(), title, amountPkr, createdAt: Date.now() });
+      saveAll();
+      closeModal();
+      showToast('Expense logged.');
+      render();
+    };
+
+    window.exportCsvReport = () => {
+      const rows = [['OrderNumber','Type','Table','Status','TotalPKR','Items','Timestamp']];
+      state.orders.forEach(o => {
+        rows.push([
+          o.orderNumber,
+          o.orderType,
+          o.tableLabel || '',
+          o.status,
+          o.totalPkr,
+          o.lines.map(l => `${l.qty}x ${l.name}`).join('; '),
+          new Date(o.createdAt).toISOString()
+        ]);
+      });
+      const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `OakAndSmoke_PC_Report_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('CSV sales report downloaded to your PC!');
+    };
+
+    // Portal navigation
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.portal = btn.dataset.portal;
+        history.replaceState(null, '', '#' + state.portal);
+        render();
+      });
+    });
+
+    // PC PWA Installation (beforeinstallprompt) + fallback guide
+    let deferredInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+    });
+
+    document.getElementById('install-pc-btn').addEventListener('click', async () => {
+      if (deferredInstallPrompt) {
+        deferredInstallPrompt.prompt();
+        const choice = await deferredInstallPrompt.userChoice;
+        if (choice.outcome === 'accepted') {
+          showToast('Oak & Smoke is installing on your PC!');
+        }
+        deferredInstallPrompt = null;
+      } else {
+        openModal(`
+          <h2 style="margin-top:0;color:var(--amber);">Install Oak &amp; Smoke on Your PC</h2>
+          <p>Run Oak &amp; Smoke as a standalone Windows, Mac, Linux, or Chromebook desktop app with full offline support:</p>
+          <ol style="line-height:1.8;padding-left:20px;">
+            <li>Open this page in <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong> on your PC.</li>
+            <li>Click the <strong>Install icon (⊕ / ⬇)</strong> on the right side of the browser address bar — or open the browser menu (⋮) &rarr; <strong>Cast, save, and share &rarr; Install Oak &amp; Smoke</strong>.</li>
+            <li>Pin <strong>Oak &amp; Smoke</strong> to your Windows Taskbar / Mac Dock to launch Counter POS, Kitchen KOT, Admin &amp; Menu anytime — online or offline.</li>
+          </ol>
+          <div style="text-align:right;margin-top:14px;">
+            <button class="btn-primary" onclick="closeModal()">Got It</button>
+          </div>
+        `);
+      }
+    });
+
+    window.addEventListener('online', updateNetworkBadge);
+    window.addEventListener('offline', updateNetworkBadge);
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+
+    render();
+  </script>
+</body>
+</html>

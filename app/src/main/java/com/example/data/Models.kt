@@ -214,6 +214,7 @@ data class MenuItem(
     val category: String = "KARAHI",
     val description: String = "",
     val pricePkr: Long = 0L,
+    val varietiesDetail: String = "",
     val imageKey: String = "karahi",
     val dailySpecial: Boolean = false,
     val available: Boolean = true,
@@ -357,10 +358,100 @@ data class NotificationItem(
     @ServerTimestamp val createdAt: Timestamp? = null
 )
 
+data class DishVariety(
+    val label: String,
+    val pricePkr: Long
+)
+
+fun encodeDishVarieties(varieties: List<DishVariety>): String =
+    varieties
+        .filter { it.label.isNotBlank() && it.pricePkr in 50L..250000L }
+        .take(4)
+        .joinToString("\n") { v ->
+            val cleanLabel = v.label.replace("||", " ").replace("\n", " ").trim().take(40)
+            "$cleanLabel||${v.pricePkr}"
+        }
+        .take(600)
+
+fun MenuItem.parsedVarieties(): List<DishVariety> {
+    if (varietiesDetail.isNotBlank()) {
+        val parsed = varietiesDetail.lines().mapNotNull { row ->
+            val parts = row.split("||")
+            if (parts.size >= 2) {
+                val lbl = parts[0].trim()
+                val rate = parts[1].trim().toLongOrNull()
+                if (lbl.isNotBlank() && rate != null && rate in 50L..250000L) {
+                    DishVariety(lbl, rate)
+                } else null
+            } else null
+        }.take(4)
+        if (parsed.isNotEmpty()) return parsed
+    }
+    val base = pricePkr.coerceIn(50L, 250000L)
+    return listOf(DishVariety("Standard", base))
+}
+
+fun defaultFourVarietiesForPrice(basePricePkr: Long): List<DishVariety> {
+    val safeBase = basePricePkr.coerceIn(50L, 250000L)
+    val v2 = ((safeBase * 14L / 10L) / 10L * 10L).coerceIn(50L, 250000L)
+    val v3 = ((safeBase * 19L / 10L) / 10L * 10L).coerceIn(50L, 250000L)
+    val v4 = ((safeBase * 26L / 10L) / 10L * 10L).coerceIn(50L, 250000L)
+    return listOf(
+        DishVariety("Regular", safeBase),
+        DishVariety("Half", v2),
+        DishVariety("Full", v3),
+        DishVariety("Family", v4)
+    )
+}
+
+fun cartItemKey(dishId: String, varietyLabel: String = ""): String =
+    if (varietyLabel.isBlank()) dishId else "$dishId::${varietyLabel.trim()}"
+
 data class CartLine(
     val item: MenuItem,
-    val quantity: Int
-)
+    val quantity: Int,
+    val varietyLabel: String = "",
+    val unitPricePkr: Long = item.pricePkr
+) {
+    val lineTotalPkr: Long get() = unitPricePkr * quantity
+    fun displayNameWithVariety(): String =
+        if (varietyLabel.isBlank()) item.name else "${item.name} ($varietyLabel)"
+}
+
+fun resolveCartLines(items: List<MenuItem>, quantities: Map<String, Int>): List<CartLine> {
+    if (quantities.isEmpty()) return emptyList()
+    val itemMap = items.associateBy { it.id }
+    val result = mutableListOf<CartLine>()
+    quantities.forEach { (key, qty) ->
+        if (qty <= 0) return@forEach
+        val sepIdx = key.indexOf("::")
+        val dishId = if (sepIdx >= 0) key.substring(0, sepIdx) else key
+        val requestedLabel = if (sepIdx >= 0) key.substring(sepIdx + 2) else ""
+        val dish = itemMap[dishId] ?: return@forEach
+        if (!dish.available) return@forEach
+        val varieties = dish.parsedVarieties()
+        val matched = if (requestedLabel.isNotBlank()) {
+            varieties.firstOrNull { it.label.equals(requestedLabel, ignoreCase = true) }
+        } else {
+            varieties.firstOrNull()
+        }
+        val finalLabel = when {
+            matched != null && varieties.size > 1 -> matched.label
+            requestedLabel.isNotBlank() -> requestedLabel
+            else -> ""
+        }
+        val finalPrice = matched?.pricePkr ?: dish.pricePkr
+        result.add(
+            CartLine(
+                item = dish,
+                quantity = qty,
+                varietyLabel = finalLabel,
+                unitPricePkr = finalPrice
+            )
+        )
+    }
+    return result
+}
 
 data class OrderLineItem(
     val qty: Int,
@@ -371,9 +462,9 @@ data class OrderLineItem(
 
 fun encodeOrderLines(lines: List<CartLine>): String =
     lines.joinToString("\n") { line ->
-        val cleanName = line.item.name.replace("||", " ").replace("\n", " ").trim()
-        val lineTotal = line.item.pricePkr * line.quantity
-        "${line.quantity}||$cleanName||${line.item.pricePkr}||$lineTotal"
+        val cleanName = line.displayNameWithVariety().replace("||", " ").replace("\n", " ").trim()
+        val lineTotal = line.unitPricePkr * line.quantity
+        "${line.quantity}||$cleanName||${line.unitPricePkr}||$lineTotal"
     }.take(2000)
 
 fun OrderRecord.parsedLineItems(): List<OrderLineItem> {
@@ -433,10 +524,11 @@ object OakAndSmokeSeeds {
     val starterMenu: List<MenuItem> = listOf(
         MenuItem(
             id = "mutton_shahi_karahi",
-            name = "Oak-Smoked Mutton Karahi (Full)",
+            name = "Oak-Smoked Mutton Karahi",
             category = MenuCategory.KARAHI.name,
             description = "Fresh Hasilpur mutton simmered in vine tomatoes, desi ghee, crushed black pepper, and julienned ginger.",
-            pricePkr = 3600L,
+            pricePkr = 1950L,
+            varietiesDetail = "Half (500g)||1950\nFull (1 Kg)||3600\nDesi Ghee Full||4100\nFamily Handi (1.5 Kg)||5200",
             imageKey = "karahi",
             dailySpecial = true,
             available = true,
@@ -448,7 +540,8 @@ object OakAndSmokeSeeds {
             name = "Charcoal Chicken Makhni Karahi",
             category = MenuCategory.KARAHI.name,
             description = "Tender boneless chicken finished with smoky butter, green chilies, and hand-ground garam masala.",
-            pricePkr = 2250L,
+            pricePkr = 1250L,
+            varietiesDetail = "Half (500g)||1250\nFull (1 Kg)||2250\nBoneless Handi||2550\nFamily Pot (1.5 Kg)||3300",
             imageKey = "karahi",
             dailySpecial = false,
             available = true,
@@ -459,8 +552,9 @@ object OakAndSmokeSeeds {
             id = "hasilpur_special_platter",
             name = "Oak & Smoke Royal BBQ Platter",
             category = MenuCategory.PLATTERS.name,
-            description = "Serves 4: Chicken Tikka, 4 Beef Seekh Kebabs, Malai Boti, Reshmi Kabab, 4 Garlic Naan, Mint Raita & Salad.",
-            pricePkr = 4450L,
+            description = "Chicken Tikka, Beef Seekh Kebabs, Malai Boti, Reshmi Kabab, Garlic Naan, Mint Raita & Salad.",
+            pricePkr = 2450L,
+            varietiesDetail = "Duo (2 Persons)||2450\nStandard (4 Persons)||4450\nLarge (6 Persons)||6450\nRoyal Feast (8 Persons)||8400",
             imageKey = "platter",
             dailySpecial = true,
             available = true,
@@ -471,8 +565,9 @@ object OakAndSmokeSeeds {
             id = "family_karahi_bbq_feast",
             name = "Family Karahi & Grill Feast",
             category = MenuCategory.PLATTERS.name,
-            description = "Serves 6: Half Mutton Karahi, Half Chicken Karahi, 6 Seekh Kebabs, Malai Boti, 6 Roghni Naan & Cold Drinks.",
-            pricePkr = 7800L,
+            description = "Mutton Karahi, Chicken Karahi, Seekh Kebabs, Malai Boti, Roghni Naan & Chilled Drinks.",
+            pricePkr = 4600L,
+            varietiesDetail = "4 Persons||4600\n6 Persons||7800\n8 Persons||9900\nGrand 12 Persons||14200",
             imageKey = "platter",
             dailySpecial = false,
             available = true,
@@ -481,10 +576,11 @@ object OakAndSmokeSeeds {
         ),
         MenuItem(
             id = "beef_seekh_kebabs",
-            name = "Smoked Beef Seekh Kebabs (4 Pcs)",
+            name = "Smoked Beef Seekh Kebabs",
             category = MenuCategory.BBQ.name,
             description = "Hand-minced spiced beef skewers seared over glowing oak charcoal with roasted chili chutney.",
-            pricePkr = 980L,
+            pricePkr = 520L,
+            varietiesDetail = "2 Skewers||520\n4 Skewers||980\n6 Skewers||1420\nDozen Box (12)||2750",
             imageKey = "kebabs",
             dailySpecial = true,
             available = true,
@@ -496,7 +592,8 @@ object OakAndSmokeSeeds {
             name = "Creamy Chicken Malai Boti",
             category = MenuCategory.BBQ.name,
             description = "Velvety yogurt-and-cream marinated chicken cubes flame-kissed for a delicate smoky char.",
-            pricePkr = 1150L,
+            pricePkr = 650L,
+            varietiesDetail = "Half Plate (6 Pcs)||650\nFull Plate (12 Pcs)||1150\nCheese Malai||1380\nFamily Tray (24 Pcs)||2150",
             imageKey = "kebabs",
             dailySpecial = false,
             available = true,
@@ -509,6 +606,7 @@ object OakAndSmokeSeeds {
             category = MenuCategory.BBQ.name,
             description = "Quarter leg or chest piece marinated 12 hours in traditional red spices and basted with lemon butter.",
             pricePkr = 620L,
+            varietiesDetail = "Leg Piece||620\nChest Piece||680\nHalf Chicken (2 Pcs)||1240\nFull Sajji Tikka||2380",
             imageKey = "kebabs",
             dailySpecial = false,
             available = true,
@@ -520,7 +618,8 @@ object OakAndSmokeSeeds {
             name = "Tandoori Garlic Butter Naan",
             category = MenuCategory.NAAN_SIDES.name,
             description = "Crisp clay-oven flatbread brushed with roasted garlic, fresh coriander, and desi butter.",
-            pricePkr = 140L,
+            pricePkr = 100L,
+            varietiesDetail = "Plain Roghni||100\nGarlic Butter||140\nCheese Naan||280\nFamily Basket (6)||750",
             imageKey = "platter",
             dailySpecial = false,
             available = true,
@@ -532,7 +631,8 @@ object OakAndSmokeSeeds {
             name = "Fresh Mint Margarita",
             category = MenuCategory.BEVERAGES.name,
             description = "Chilled crushed mint, fresh lime, black salt, and sparkling soda.",
-            pricePkr = 320L,
+            pricePkr = 260L,
+            varietiesDetail = "Regular Glass||260\nLarge Glass||360\nStrawberry Mint||420\nTable Pitcher (1.5L)||980",
             imageKey = "hero",
             dailySpecial = false,
             available = true,
@@ -544,7 +644,8 @@ object OakAndSmokeSeeds {
             name = "Smoked Pistachio Kashmiri Chai",
             category = MenuCategory.BEVERAGES.name,
             description = "Slow-brewed pink tea topped with crushed pistachios and cardamom.",
-            pricePkr = 280L,
+            pricePkr = 240L,
+            varietiesDetail = "Regular Cup||240\nSpecial Dry Fruit||320\nKulhad Mug||380\nKettle (4 Cups)||950",
             imageKey = "hero",
             dailySpecial = false,
             available = true,
@@ -563,15 +664,50 @@ object OakAndSmokeSeeds {
         InventoryItem(id = "inv_takeaway_boxes", name = "Insulated COD Food Boxes", category = InventoryCategory.PACKAGING.name, quantity = 120L, unit = "pcs", minThreshold = 40L, unitCostPkr = 45L)
     )
 
-    val starterTables: List<DiningTable> = listOf(
-        DiningTable(id = "tbl_1", label = "Table 1", zone = SeatingZone.CHARCOAL_HALL.name, capacity = 4L, available = true, displayOrder = 1L),
-        DiningTable(id = "tbl_2", label = "Table 2", zone = SeatingZone.CHARCOAL_HALL.name, capacity = 4L, available = true, displayOrder = 2L),
-        DiningTable(id = "tbl_3", label = "Table 3", zone = SeatingZone.CHARCOAL_HALL.name, capacity = 4L, available = true, displayOrder = 3L),
-        DiningTable(id = "tbl_4", label = "Table 4", zone = SeatingZone.CHARCOAL_HALL.name, capacity = 6L, available = true, displayOrder = 4L),
-        DiningTable(id = "tbl_5", label = "Table 5", zone = SeatingZone.CHARCOAL_HALL.name, capacity = 6L, available = true, displayOrder = 5L),
-        DiningTable(id = "tbl_6", label = "Table 6", zone = SeatingZone.CHARCOAL_HALL.name, capacity = 6L, available = true, displayOrder = 6L),
-        DiningTable(id = "tbl_cabin_1", label = "Family Cabin 1", zone = SeatingZone.FAMILY_CABIN.name, capacity = 8L, available = true, displayOrder = 7L),
-        DiningTable(id = "tbl_cabin_2", label = "Family Cabin 2", zone = SeatingZone.FAMILY_CABIN.name, capacity = 10L, available = true, displayOrder = 8L),
-        DiningTable(id = "tbl_lawn_1", label = "Outdoor Lawn 1", zone = SeatingZone.OUTDOOR_LAWN.name, capacity = 6L, available = true, displayOrder = 9L)
-    )
+    // 25 Dining Tables across Charcoal Main Hall (1-15), Family Cabins (16-20), and Outdoor Grill Lawn (21-25)
+    val starterTables: List<DiningTable> = buildList {
+        for (i in 1..15) {
+            val seats = if (i <= 8) 4L else 6L
+            add(
+                DiningTable(
+                    id = "tbl_$i",
+                    label = "Table $i",
+                    zone = SeatingZone.CHARCOAL_HALL.name,
+                    capacity = seats,
+                    available = true,
+                    displayOrder = i.toLong()
+                )
+            )
+        }
+        val cabinCapacities = listOf(6L, 8L, 8L, 10L, 12L)
+        cabinCapacities.forEachIndexed { idx, seats ->
+            val tableNo = 16 + idx
+            val cabinNo = idx + 1
+            add(
+                DiningTable(
+                    id = "tbl_$tableNo",
+                    label = "Table $tableNo · Family Cabin $cabinNo",
+                    zone = SeatingZone.FAMILY_CABIN.name,
+                    capacity = seats,
+                    available = true,
+                    displayOrder = tableNo.toLong()
+                )
+            )
+        }
+        val lawnCapacities = listOf(4L, 6L, 6L, 8L, 8L)
+        lawnCapacities.forEachIndexed { idx, seats ->
+            val tableNo = 21 + idx
+            val lawnNo = idx + 1
+            add(
+                DiningTable(
+                    id = "tbl_$tableNo",
+                    label = "Table $tableNo · Outdoor Lawn $lawnNo",
+                    zone = SeatingZone.OUTDOOR_LAWN.name,
+                    capacity = seats,
+                    available = true,
+                    displayOrder = tableNo.toLong()
+                )
+            )
+        }
+    }
 }

@@ -9,6 +9,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -59,6 +61,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -80,8 +83,10 @@ import com.example.data.CartLine
 import com.example.data.MenuCategory
 import com.example.data.MenuItem
 import com.example.data.SpiceLevel
+import com.example.data.cartItemKey
 import com.example.data.formatCoordinates
 import com.example.data.formatPkr
+import com.example.data.parsedVarieties
 import com.example.services.CapturedLocation
 import com.example.services.LocationHelper
 import com.example.ui.components.EmptyStateCard
@@ -140,7 +145,7 @@ fun CustomerMenuScreen(
     }
 
     val cartItemCount = cartLines.sumOf { it.quantity }
-    val cartSubtotal = cartLines.sumOf { it.item.pricePkr * it.quantity }
+    val cartSubtotal = cartLines.sumOf { it.unitPricePkr * it.quantity }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -277,10 +282,15 @@ fun CustomerMenuScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         items(specials, key = { "sp_${it.id}" }) { special ->
+                            val firstVariety = remember(special.id, special.varietiesDetail, special.pricePkr) {
+                                special.parsedVarieties().first()
+                            }
+                            val defaultKey = cartItemKey(special.id, firstVariety.label)
+                            val totalSpecialQty = cartLines.filter { it.item.id == special.id }.sumOf { it.quantity }
                             DailySpecialCard(
                                 dish = special,
-                                qty = cartQuantities[special.id] ?: 0,
-                                onAdd = { viewModel.incrementCart(special.id) }
+                                qty = totalSpecialQty,
+                                onAdd = { viewModel.incrementCart(defaultKey) }
                             )
                         }
                     }
@@ -361,9 +371,9 @@ fun CustomerMenuScreen(
                         items(filteredItems, key = { it.id }) { dish ->
                             MenuDishCard(
                                 dish = dish,
-                                quantity = cartQuantities[dish.id] ?: 0,
-                                onIncrement = { viewModel.incrementCart(dish.id) },
-                                onDecrement = { viewModel.decrementCart(dish.id) }
+                                cartQuantities = cartQuantities,
+                                onIncrementKey = { key -> viewModel.incrementCart(key) },
+                                onDecrementKey = { key -> viewModel.decrementCart(key) }
                             )
                         }
                     }
@@ -550,116 +560,154 @@ private fun DailySpecialCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MenuDishCard(
     dish: MenuItem,
-    quantity: Int,
-    onIncrement: () -> Unit,
-    onDecrement: () -> Unit
+    cartQuantities: Map<String, Int>,
+    onIncrementKey: (String) -> Unit,
+    onDecrementKey: (String) -> Unit
 ) {
+    val varieties = remember(dish.id, dish.varietiesDetail, dish.pricePkr) { dish.parsedVarieties() }
+    var selectedVarietyIdx by remember(dish.id, varieties.size) { mutableIntStateOf(0) }
+    val activeVariety = varieties.getOrElse(selectedVarietyIdx) { varieties.first() }
+    val activeKey = cartItemKey(dish.id, activeVariety.label)
+    val quantity = cartQuantities[activeKey] ?: 0
+
     SmokedCard {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Image(
-                painter = painterResource(id = resolveDishDrawable(dish.imageKey)),
-                contentDescription = dish.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(96.dp)
-                    .clip(RoundedCornerShape(14.dp))
-            )
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = MenuCategory.fromRaw(dish.category).displayLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = SmokedAmber
-                    )
-                    Text("·", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(
-                        text = "${SpiceLevel.fromRaw(dish.spiceLevel).displayLabel} · ${dish.prepMinutes}m",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Text(
-                    text = dish.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                Image(
+                    painter = painterResource(id = resolveDishDrawable(dish.imageKey)),
+                    contentDescription = dish.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(96.dp)
+                        .clip(RoundedCornerShape(14.dp))
                 )
-                Text(
-                    text = dish.description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = formatPkr(dish.pricePkr),
-                        style = MonoPriceStyle,
-                        color = SmokedAmber
-                    )
 
-                    if (!dish.available) {
-                        StatusPill(label = "Sold Out", color = MaterialTheme.colorScheme.error)
-                    } else if (quantity == 0) {
-                        Button(
-                            onClick = onIncrement,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = SmokedAmber,
-                                contentColor = CharcoalDeep
-                            ),
-                            modifier = Modifier.testTag("add_dish_${dish.id}")
-                        ) {
-                            Icon(Icons.Filled.Add, contentDescription = "Add ${dish.name}", modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Add")
-                        }
-                    } else {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            IconButton(
-                                onClick = onDecrement,
-                                modifier = Modifier.size(48.dp)
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = MenuCategory.fromRaw(dish.category).displayLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SmokedAmber
+                        )
+                        Text("·", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = "${SpiceLevel.fromRaw(dish.spiceLevel).displayLabel} · ${dish.prepMinutes}m",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        text = dish.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = dish.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = formatPkr(activeVariety.pricePkr),
+                            style = MonoPriceStyle,
+                            color = SmokedAmber
+                        )
+
+                        if (!dish.available) {
+                            StatusPill(label = "Sold Out", color = MaterialTheme.colorScheme.error)
+                        } else if (quantity == 0) {
+                            Button(
+                                onClick = { onIncrementKey(activeKey) },
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = SmokedAmber,
+                                    contentColor = CharcoalDeep
+                                ),
+                                modifier = Modifier.testTag("add_dish_${dish.id}")
                             ) {
-                                Icon(Icons.Filled.Remove, contentDescription = "Decrease ${dish.name}", tint = SmokedAmber)
+                                Icon(Icons.Filled.Add, contentDescription = "Add ${dish.name}", modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Add")
                             }
-                            Text(
-                                text = "$quantity",
-                                style = MonoPriceStyle,
-                                color = MaterialTheme.colorScheme.onSurface
+                        } else {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                IconButton(
+                                    onClick = { onDecrementKey(activeKey) },
+                                    modifier = Modifier.size(48.dp)
+                                ) {
+                                    Icon(Icons.Filled.Remove, contentDescription = "Decrease ${dish.name}", tint = SmokedAmber)
+                                }
+                                Text(
+                                    text = "$quantity",
+                                    style = MonoPriceStyle,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                IconButton(
+                                    onClick = { onIncrementKey(activeKey) },
+                                    modifier = Modifier.size(48.dp)
+                                ) {
+                                    Icon(Icons.Filled.Add, contentDescription = "Increase ${dish.name}", tint = SmokedAmber)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (varieties.size > 1) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    varieties.forEachIndexed { idx, variety ->
+                        val vQty = cartQuantities[cartItemKey(dish.id, variety.label)] ?: 0
+                        FilterChip(
+                            selected = selectedVarietyIdx == idx,
+                            onClick = { selectedVarietyIdx = idx },
+                            label = {
+                                val badge = if (vQty > 0) " ($vQty)" else ""
+                                Text(
+                                    text = "${variety.label} · ${formatPkr(variety.pricePkr)}$badge",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = SmokedAmber,
+                                selectedLabelColor = CharcoalDeep
                             )
-                            IconButton(
-                                onClick = onIncrement,
-                                modifier = Modifier.size(48.dp)
-                            ) {
-                                Icon(Icons.Filled.Add, contentDescription = "Increase ${dish.name}", tint = SmokedAmber)
-                            }
-                        }
+                        )
                     }
                 }
             }
@@ -721,7 +769,7 @@ private fun CodCheckoutSheetContent(
         }
     }
 
-    val subtotal = cartLines.sumOf { it.item.pricePkr * it.quantity }
+    val subtotal = cartLines.sumOf { it.unitPricePkr * it.quantity }
     val maxRedeemable = minOf(availablePoints, if (pointValuePkr > 0L) subtotal / pointValuePkr else 0L)
     val redeemedPoints = redeemSlider.roundToLong().coerceIn(0L, maxRedeemable)
     val discountPkr = (redeemedPoints * pointValuePkr).coerceAtMost(subtotal)
@@ -761,12 +809,12 @@ private fun CodCheckoutSheetContent(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "${line.quantity}x ${line.item.name}",
+                            text = "${line.quantity}x ${line.displayNameWithVariety()}",
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.weight(1f)
                         )
                         Text(
-                            text = formatPkr(line.item.pricePkr * line.quantity),
+                            text = formatPkr(line.unitPricePkr * line.quantity),
                             style = MonoPriceStyle,
                             color = SmokedAmber
                         )

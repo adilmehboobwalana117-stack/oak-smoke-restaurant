@@ -1,5 +1,6 @@
 package com.example.data
 
+import com.google.android.gms.tasks.Task
 import com.google.firebase.Firebase
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.auth
@@ -15,11 +16,29 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 import kotlin.random.Random
 
+data class StaffOrderSubmission(
+    val order: OrderRecord,
+    val syncedOnline: Boolean
+)
+
 class AdminFinanceRepository(private val db: FirebaseFirestore) {
     private val auth = Firebase.auth
+
+    private suspend fun awaitWriteSupportingOffline(task: Task<*>, isOnline: Boolean): Boolean {
+        if (!isOnline) {
+            // Firestore persistent cache commits locally immediately and auto-syncs when online.
+            return false
+        }
+        val completed = withTimeoutOrNull(4500L) {
+            task.await()
+            true
+        }
+        return completed == true
+    }
 
     private fun requireUserId(): String =
         auth.currentUser?.uid
@@ -187,6 +206,7 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
                             "category" to dish.category,
                             "description" to dish.description,
                             "pricePkr" to dish.pricePkr,
+                            "varietiesDetail" to dish.varietiesDetail,
                             "imageKey" to dish.imageKey,
                             "dailySpecial" to dish.dailySpecial,
                             "available" to dish.available,
@@ -247,8 +267,9 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
         deliveryAddress: String,
         cartLines: List<CartLine>,
         staffId: String,
-        notes: String
-    ): Result<OrderRecord> {
+        notes: String,
+        isOnline: Boolean = true
+    ): Result<StaffOrderSubmission> {
         var path = "orders"
         return try {
             val uid = requireUserId()
@@ -264,9 +285,9 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
                 require(cleanAddress.length >= 4) { "Enter delivery address for COD Delivery." }
             }
 
-            val subtotal = cartLines.sumOf { it.item.pricePkr * it.quantity }
+            val subtotal = cartLines.sumOf { it.unitPricePkr * it.quantity }
             val itemCount = cartLines.sumOf { it.quantity }.toLong().coerceIn(1L, 100L)
-            val summary = cartLines.joinToString(", ") { "${it.quantity}x ${it.item.name}" }.take(1000)
+            val summary = cartLines.joinToString(", ") { "${it.quantity}x ${it.displayNameWithVariety()}" }.take(1000)
             val detail = encodeOrderLines(cartLines)
             val orderNum = "OS-${Random.nextInt(1000, 9999)}"
             val cleanStaffId = staffId.trim().ifBlank { "STAFF" }.take(32)
@@ -335,35 +356,34 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
                     "createdAt" to FieldValue.serverTimestamp()
                 )
             )
-            batch.commit().await()
+            val syncedOnline = awaitWriteSupportingOffline(batch.commit(), isOnline)
 
-            Result.success(
-                OrderRecord(
-                    id = orderRef.id,
-                    orderNumber = orderNum,
-                    userId = uid,
-                    orderType = orderType.name,
-                    tableLabel = cleanTable,
-                    customerName = cleanCustomerName,
-                    customerPhone = cleanPhone,
-                    deliveryAddress = cleanAddress,
-                    itemsSummary = summary,
-                    itemsDetail = detail,
-                    itemCount = itemCount,
-                    subtotalPkr = subtotal,
-                    loyaltyPointsRedeemed = 0L,
-                    discountPkr = 0L,
-                    totalPkr = subtotal,
-                    paymentMethod = paymentMethod,
-                    status = OrderStatus.GRILLING.name,
-                    handledByStaffId = cleanStaffId,
-                    notes = cleanNotes,
-                    dateKey = dateKey,
-                    monthKey = monthKey,
-                    createdAt = Timestamp.now(),
-                    updatedAt = Timestamp.now()
-                )
+            val created = OrderRecord(
+                id = orderRef.id,
+                orderNumber = orderNum,
+                userId = uid,
+                orderType = orderType.name,
+                tableLabel = cleanTable,
+                customerName = cleanCustomerName,
+                customerPhone = cleanPhone,
+                deliveryAddress = cleanAddress,
+                itemsSummary = summary,
+                itemsDetail = detail,
+                itemCount = itemCount,
+                subtotalPkr = subtotal,
+                loyaltyPointsRedeemed = 0L,
+                discountPkr = 0L,
+                totalPkr = subtotal,
+                paymentMethod = paymentMethod,
+                status = OrderStatus.GRILLING.name,
+                handledByStaffId = cleanStaffId,
+                notes = cleanNotes,
+                dateKey = dateKey,
+                monthKey = monthKey,
+                createdAt = Timestamp.now(),
+                updatedAt = Timestamp.now()
             )
+            Result.success(StaffOrderSubmission(order = created, syncedOnline = syncedOnline))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -379,8 +399,9 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
         staffDocId: String,
         earnPer100Pkr: Long,
         riderName: String = "",
-        riderPhone: String = ""
-    ): Result<Unit> {
+        riderPhone: String = "",
+        isOnline: Boolean = true
+    ): Result<Boolean> {
         val path = "orders/${order.id}"
         return try {
             val uid = requireUserId()
@@ -395,7 +416,6 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
                 updateFields["assignedRiderName"] = riderName.trim().take(80)
                 updateFields["assignedRiderPhone"] = riderPhone.trim().take(30)
             }
-            db.collection("orders").document(order.id).update(updateFields).await()
 
             val isCodDelivery = order.orderType == OrderType.COD_DELIVERY.name
             val isCustomerOnlineOrder = isCodDelivery && order.userId != uid
@@ -425,8 +445,10 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
                     "Order ${order.orderNumber} status updated to ${nextStatus.displayLabel}."
             }
 
-            // Send live notification to Customer
-            db.collection("notifications").document().set(
+            val batch = db.batch()
+            batch.update(db.collection("orders").document(order.id), updateFields)
+            batch.set(
+                db.collection("notifications").document(),
                 mapOf(
                     "targetUid" to order.userId,
                     "audience" to "USER",
@@ -437,16 +459,15 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
                     "createdByUid" to uid,
                     "createdAt" to FieldValue.serverTimestamp()
                 )
-            ).await()
-
-            // When a COD Delivery order becomes READY, send immediate SOUND alert to Riders!
+            )
             if (nextStatus == OrderStatus.READY && isCodDelivery) {
                 val gpsTag = if (order.hasLocation) {
                     "GPS: ${formatCoordinates(order.customerLat, order.customerLng)}"
                 } else {
                     "Address: ${order.deliveryAddress}"
                 }
-                db.collection("notifications").document().set(
+                batch.set(
+                    db.collection("notifications").document(),
                     mapOf(
                         "targetUid" to "ROLE_RIDER",
                         "audience" to "RIDER",
@@ -457,37 +478,44 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
                         "createdByUid" to uid,
                         "createdAt" to FieldValue.serverTimestamp()
                     )
-                ).await()
+                )
             }
+            val syncedOnline = awaitWriteSupportingOffline(batch.commit(), isOnline)
 
             // Award customer loyalty points & increment staff/rider handled orders on DELIVERED
             if (nextStatus == OrderStatus.DELIVERED) {
                 if (earnedPts > 0L && order.userId.isNotBlank()) {
                     try {
-                        db.collection("users").document(order.userId).update(
-                            mapOf(
-                                "loyaltyPoints" to FieldValue.increment(earnedPts),
-                                "updatedAt" to FieldValue.serverTimestamp()
-                            )
-                        ).await()
+                        awaitWriteSupportingOffline(
+                            db.collection("users").document(order.userId).update(
+                                mapOf(
+                                    "loyaltyPoints" to FieldValue.increment(earnedPts),
+                                    "updatedAt" to FieldValue.serverTimestamp()
+                                )
+                            ),
+                            isOnline
+                        )
                     } catch (e: Exception) {
                         handleFirestoreError(e, OperationType.UPDATE, "users/${order.userId}")
                     }
                 }
                 if (staffDocId.isNotBlank()) {
                     try {
-                        db.collection("staffMembers").document(staffDocId).update(
-                            mapOf(
-                                "ordersHandledCount" to FieldValue.increment(1L),
-                                "updatedAt" to FieldValue.serverTimestamp()
-                            )
-                        ).await()
+                        awaitWriteSupportingOffline(
+                            db.collection("staffMembers").document(staffDocId).update(
+                                mapOf(
+                                    "ordersHandledCount" to FieldValue.increment(1L),
+                                    "updatedAt" to FieldValue.serverTimestamp()
+                                )
+                            ),
+                            isOnline
+                        )
                     } catch (e: Exception) {
                         handleFirestoreError(e, OperationType.UPDATE, "staffMembers/$staffDocId")
                     }
                 }
             }
-            Result.success(Unit)
+            Result.success(syncedOnline)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -625,6 +653,7 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
         category: MenuCategory,
         description: String,
         pricePkr: Long,
+        varieties: List<DishVariety> = emptyList(),
         imageKey: String,
         dailySpecial: Boolean,
         available: Boolean,
@@ -636,7 +665,10 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
         return try {
             val uid = requireUserId()
             require(name.trim().length in 2..80) { "Dish name must be 2-80 characters." }
-            require(pricePkr in 50L..250000L) { "Price must be between Rs. 50 and Rs. 250,000." }
+            val cleanVarieties = varieties.filter { it.label.isNotBlank() && it.pricePkr in 50L..250000L }.take(4)
+            val effectivePrice = cleanVarieties.firstOrNull()?.pricePkr ?: pricePkr
+            require(effectivePrice in 50L..250000L) { "Price must be between Rs. 50 and Rs. 250,000." }
+            val encodedVarieties = encodeDishVarieties(cleanVarieties)
             if (existingId.isNullOrBlank()) {
                 val ref = db.collection("menuItems").document()
                 path = ref.path
@@ -646,7 +678,8 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
                         "name" to name.trim().take(80),
                         "category" to category.name,
                         "description" to description.trim().take(300),
-                        "pricePkr" to pricePkr,
+                        "pricePkr" to effectivePrice,
+                        "varietiesDetail" to encodedVarieties,
                         "imageKey" to imageKey.ifBlank { "karahi" }.take(60),
                         "dailySpecial" to dailySpecial,
                         "available" to available,
@@ -663,7 +696,8 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
                         "name" to name.trim().take(80),
                         "category" to category.name,
                         "description" to description.trim().take(300),
-                        "pricePkr" to pricePkr,
+                        "pricePkr" to effectivePrice,
+                        "varietiesDetail" to encodedVarieties,
                         "imageKey" to imageKey.ifBlank { "karahi" }.take(60),
                         "dailySpecial" to dailySpecial,
                         "available" to available,
@@ -679,7 +713,7 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
                         "targetUid" to "BROADCAST_ALL",
                         "audience" to "BROADCAST",
                         "title" to "Today's Special: ${name.trim().take(60)}",
-                        "message" to "Fresh from Oak & Smoke Hasilpur for ${formatPkr(pricePkr)}! ${description.trim().take(200)}",
+                        "message" to "Fresh from Oak & Smoke Hasilpur from ${formatPkr(effectivePrice)}! ${description.trim().take(200)}",
                         "type" to "SPECIAL",
                         "read" to false,
                         "createdByUid" to uid,
@@ -1195,21 +1229,47 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
         val path = "diningTables"
         return try {
             requireUserId()
+            val existingIds = try {
+                db.collection("diningTables")
+                    .whereEqualTo("catalogType", "TABLE")
+                    .get()
+                    .await()
+                    .documents
+                    .map { it.id }
+                    .toSet()
+            } catch (_: Exception) {
+                emptySet()
+            }
             val batch = db.batch()
             OakAndSmokeSeeds.starterTables.forEach { tbl ->
-                batch.set(
-                    db.collection("diningTables").document(tbl.id),
-                    mapOf(
-                        "catalogType" to "TABLE",
-                        "label" to tbl.label,
-                        "zone" to tbl.zone,
-                        "capacity" to tbl.capacity,
-                        "available" to tbl.available,
-                        "displayOrder" to tbl.displayOrder,
-                        "createdAt" to FieldValue.serverTimestamp(),
-                        "updatedAt" to FieldValue.serverTimestamp()
+                val ref = db.collection("diningTables").document(tbl.id)
+                if (tbl.id in existingIds) {
+                    batch.update(
+                        ref,
+                        mapOf(
+                            "label" to tbl.label,
+                            "zone" to tbl.zone,
+                            "capacity" to tbl.capacity,
+                            "available" to tbl.available,
+                            "displayOrder" to tbl.displayOrder,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
                     )
-                )
+                } else {
+                    batch.set(
+                        ref,
+                        mapOf(
+                            "catalogType" to "TABLE",
+                            "label" to tbl.label,
+                            "zone" to tbl.zone,
+                            "capacity" to tbl.capacity,
+                            "available" to tbl.available,
+                            "displayOrder" to tbl.displayOrder,
+                            "createdAt" to FieldValue.serverTimestamp(),
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    )
+                }
             }
             batch.commit().await()
             Result.success(Unit)
@@ -1221,17 +1281,23 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun updateMenuItemPrice(itemId: String, newPricePkr: Long): Result<Unit> {
+    suspend fun updateMenuItemPrice(
+        itemId: String,
+        newPricePkr: Long,
+        updatedVarietiesDetail: String? = null
+    ): Result<Unit> {
         val path = "menuItems/$itemId"
         return try {
             requireUserId()
             require(newPricePkr in 50L..250000L) { "Dish rate must be between Rs. 50 and Rs. 250,000." }
-            db.collection("menuItems").document(itemId).update(
-                mapOf(
-                    "pricePkr" to newPricePkr,
-                    "updatedAt" to FieldValue.serverTimestamp()
-                )
-            ).await()
+            val fields = mutableMapOf<String, Any>(
+                "pricePkr" to newPricePkr,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            if (updatedVarietiesDetail != null) {
+                fields["varietiesDetail"] = updatedVarietiesDetail.take(600)
+            }
+            db.collection("menuItems").document(itemId).update(fields).await()
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -1265,25 +1331,57 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
         val path = "menuItems"
         return try {
             requireUserId()
+            val existingIds = try {
+                db.collection("menuItems")
+                    .whereEqualTo("catalogType", "MENU")
+                    .get()
+                    .await()
+                    .documents
+                    .map { it.id }
+                    .toSet()
+            } catch (_: Exception) {
+                emptySet()
+            }
             val batch = db.batch()
             OakAndSmokeSeeds.starterMenu.forEach { dish ->
-                batch.set(
-                    db.collection("menuItems").document(dish.id),
-                    mapOf(
-                        "catalogType" to "MENU",
-                        "name" to dish.name,
-                        "category" to dish.category,
-                        "description" to dish.description,
-                        "pricePkr" to dish.pricePkr,
-                        "imageKey" to dish.imageKey,
-                        "dailySpecial" to dish.dailySpecial,
-                        "available" to dish.available,
-                        "spiceLevel" to dish.spiceLevel,
-                        "prepMinutes" to dish.prepMinutes,
-                        "createdAt" to FieldValue.serverTimestamp(),
-                        "updatedAt" to FieldValue.serverTimestamp()
+                val ref = db.collection("menuItems").document(dish.id)
+                if (dish.id in existingIds) {
+                    batch.update(
+                        ref,
+                        mapOf(
+                            "name" to dish.name,
+                            "category" to dish.category,
+                            "description" to dish.description,
+                            "pricePkr" to dish.pricePkr,
+                            "varietiesDetail" to dish.varietiesDetail,
+                            "imageKey" to dish.imageKey,
+                            "dailySpecial" to dish.dailySpecial,
+                            "available" to dish.available,
+                            "spiceLevel" to dish.spiceLevel,
+                            "prepMinutes" to dish.prepMinutes,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
                     )
-                )
+                } else {
+                    batch.set(
+                        ref,
+                        mapOf(
+                            "catalogType" to "MENU",
+                            "name" to dish.name,
+                            "category" to dish.category,
+                            "description" to dish.description,
+                            "pricePkr" to dish.pricePkr,
+                            "varietiesDetail" to dish.varietiesDetail,
+                            "imageKey" to dish.imageKey,
+                            "dailySpecial" to dish.dailySpecial,
+                            "available" to dish.available,
+                            "spiceLevel" to dish.spiceLevel,
+                            "prepMinutes" to dish.prepMinutes,
+                            "createdAt" to FieldValue.serverTimestamp(),
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    )
+                }
             }
             batch.commit().await()
             Result.success(Unit)

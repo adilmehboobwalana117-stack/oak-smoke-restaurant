@@ -125,6 +125,8 @@ fun StaffOperationsScreen(viewModel: RestaurantViewModel) {
 private fun StaffOrdersBoardTab(viewModel: RestaurantViewModel) {
     val context = LocalContext.current
     val allOrders by viewModel.allOrders.collectAsStateWithLifecycle()
+    val pendingSyncIds by viewModel.pendingSyncOrderIds.collectAsStateWithLifecycle()
+    val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
     var filter by remember { mutableStateOf("ACTIVE") }
 
     val filtered = remember(allOrders, filter) {
@@ -141,9 +143,15 @@ private fun StaffOrdersBoardTab(viewModel: RestaurantViewModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
+            val activeCount = allOrders.count { it.status != OrderStatus.DELIVERED.name && it.status != OrderStatus.CANCELLED.name }
+            val syncText = when {
+                !isOnline -> "Offline Mode · ${pendingSyncIds.size} queued for auto-sync"
+                pendingSyncIds.isNotEmpty() -> "Syncing ${pendingSyncIds.size} offline order(s)..."
+                else -> "Online · Cloud Synced"
+            }
             SectionHeader(
                 title = "Orders & Billing Counter",
-                subtitle = "${allOrders.count { it.status != OrderStatus.DELIVERED.name && it.status != OrderStatus.CANCELLED.name }} active · Print KOT or Full Customer Bill anytime"
+                subtitle = "$activeCount active · $syncText"
             )
         }
         item {
@@ -170,6 +178,7 @@ private fun StaffOrdersBoardTab(viewModel: RestaurantViewModel) {
             items(filtered, key = { it.id }) { order ->
                 StaffOrderActionCard(
                     order = order,
+                    isPendingSync = order.id in pendingSyncIds,
                     onAdvance = { next -> viewModel.advanceOrderStatus(order, next) },
                     onOpenMap = {
                         LocationHelper.openNavigationToLocation(
@@ -200,6 +209,7 @@ private fun StaffOrdersBoardTab(viewModel: RestaurantViewModel) {
 @Composable
 private fun StaffOrderActionCard(
     order: OrderRecord,
+    isPendingSync: Boolean,
     onAdvance: (OrderStatus) -> Unit,
     onOpenMap: () -> Unit,
     onPrintKot: () -> Unit,
@@ -239,7 +249,12 @@ private fun StaffOrderActionCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                StatusPill(label = status.displayLabel, color = pillColor)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (isPendingSync) {
+                        StatusPill(label = "PENDING SYNC", color = TandoorCopper)
+                    }
+                    StatusPill(label = status.displayLabel, color = pillColor)
+                }
             }
 
             Text(order.itemsSummary, style = MaterialTheme.typography.bodyMedium)

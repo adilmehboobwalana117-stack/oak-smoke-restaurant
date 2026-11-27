@@ -68,13 +68,16 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.DishVariety
 import com.example.data.ExpenseCategory
 import com.example.data.MenuCategory
 import com.example.data.MenuItem
 import com.example.data.OrderType
 import com.example.data.SpiceLevel
 import com.example.data.UserRoleTier
+import com.example.data.defaultFourVarietiesForPrice
 import com.example.data.formatPkr
+import com.example.data.parsedVarieties
 import com.example.services.FinancialReportService
 import com.example.services.OrderPrintService
 import com.example.services.ReportPeriod
@@ -646,8 +649,18 @@ private fun OwnerMenuStudioTab(viewModel: RestaurantViewModel) {
                                     if (dish.dailySpecial) StatusPill(label = "SPECIAL", color = TandoorCopper)
                                     if (!dish.available) StatusPill(label = "SOLD OUT", color = CrimsonEmber)
                                 }
+                                val dishVarieties = remember(dish.id, dish.varietiesDetail, dish.pricePkr) {
+                                    dish.parsedVarieties()
+                                }
+                                val priceRangeText = if (dishVarieties.size > 1) {
+                                    val minP = dishVarieties.minOf { it.pricePkr }
+                                    val maxP = dishVarieties.maxOf { it.pricePkr }
+                                    "${dishVarieties.size} varieties · ${formatPkr(minP)} – ${formatPkr(maxP)}"
+                                } else {
+                                    formatPkr(dish.pricePkr)
+                                }
                                 Text(
-                                    text = "${MenuCategory.fromRaw(dish.category).displayLabel} · ${formatPkr(dish.pricePkr)}",
+                                    text = "${MenuCategory.fromRaw(dish.category).displayLabel} · $priceRangeText",
                                     style = MonoPriceStyle,
                                     color = SmokedAmber
                                 )
@@ -726,9 +739,20 @@ private fun OwnerMenuStudioTab(viewModel: RestaurantViewModel) {
                 showCreateDialog = false
                 editingDish = null
             },
-            onSave = { name, cat, desc, price, imgKey, special, avail, spice, prep, broadcast ->
+            onSave = { name, cat, desc, price, varieties, imgKey, special, avail, spice, prep, broadcast ->
                 viewModel.saveMenuItem(
-                    editingDish?.id, name, cat, desc, price, imgKey, special, avail, spice, prep, broadcast
+                    existingId = editingDish?.id,
+                    name = name,
+                    category = cat,
+                    description = desc,
+                    pricePkr = price,
+                    varieties = varieties,
+                    imageKey = imgKey,
+                    dailySpecial = special,
+                    available = avail,
+                    spiceLevel = spice,
+                    prepMinutes = prep,
+                    broadcastAlert = broadcast
                 )
                 showCreateDialog = false
                 editingDish = null
@@ -836,12 +860,30 @@ private fun OwnerMenuStudioTab(viewModel: RestaurantViewModel) {
 private fun MenuDishEditorDialog(
     existing: MenuItem?,
     onDismiss: () -> Unit,
-    onSave: (String, MenuCategory, String, Long, String, Boolean, Boolean, SpiceLevel, Long, Boolean) -> Unit
+    onSave: (String, MenuCategory, String, Long, List<DishVariety>, String, Boolean, Boolean, SpiceLevel, Long, Boolean) -> Unit
 ) {
+    val initialVarieties = remember(existing?.id) {
+        val parsed = existing?.parsedVarieties().orEmpty()
+        if (parsed.size >= 4) {
+            parsed.take(4)
+        } else {
+            val defaults = defaultFourVarietiesForPrice(existing?.pricePkr ?: 1200L)
+            List(4) { idx -> parsed.getOrElse(idx) { defaults[idx] } }
+        }
+    }
+
     var name by remember { mutableStateOf(existing?.name.orEmpty()) }
     var category by remember { mutableStateOf(MenuCategory.fromRaw(existing?.category)) }
     var description by remember { mutableStateOf(existing?.description.orEmpty()) }
-    var priceText by remember { mutableStateOf(existing?.pricePkr?.toString().orEmpty()) }
+    var priceText by remember { mutableStateOf(existing?.pricePkr?.toString() ?: initialVarieties[0].pricePkr.toString()) }
+    var v1Label by remember { mutableStateOf(initialVarieties[0].label) }
+    var v1Price by remember { mutableStateOf(initialVarieties[0].pricePkr.toString()) }
+    var v2Label by remember { mutableStateOf(initialVarieties[1].label) }
+    var v2Price by remember { mutableStateOf(initialVarieties[1].pricePkr.toString()) }
+    var v3Label by remember { mutableStateOf(initialVarieties[2].label) }
+    var v3Price by remember { mutableStateOf(initialVarieties[2].pricePkr.toString()) }
+    var v4Label by remember { mutableStateOf(initialVarieties[3].label) }
+    var v4Price by remember { mutableStateOf(initialVarieties[3].pricePkr.toString()) }
     var imageKey by remember { mutableStateOf(existing?.imageKey ?: "karahi") }
     var dailySpecial by remember { mutableStateOf(existing?.dailySpecial ?: false) }
     var available by remember { mutableStateOf(existing?.available ?: true) }
@@ -852,14 +894,73 @@ private fun MenuDishEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (existing == null) "Add Menu Dish" else "Edit Dish") },
+        title = { Text(if (existing == null) "Add Menu Dish (4 Varieties)" else "Edit Dish & 4 Varieties") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedTextField(value = name, onValueChange = { name = it; errorText = null }, label = { Text("Dish Name") }, singleLine = true)
-                OutlinedTextField(value = priceText, onValueChange = { priceText = it.filter { c -> c.isDigit() }; errorText = null }, label = { Text("Price (PKR)") }, singleLine = true)
+                OutlinedTextField(value = priceText, onValueChange = { priceText = it.filter { c -> c.isDigit() }; errorText = null }, label = { Text("Base Price (PKR)") }, singleLine = true)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("4 Product Varieties", style = MaterialTheme.typography.labelLarge, color = SmokedAmber)
+                    TextButton(
+                        onClick = {
+                            val base = (priceText.toLongOrNull() ?: 1200L).coerceIn(50L, 250000L)
+                            val gen = defaultFourVarietiesForPrice(base)
+                            v1Label = gen[0].label; v1Price = gen[0].pricePkr.toString()
+                            v2Label = gen[1].label; v2Price = gen[1].pricePkr.toString()
+                            v3Label = gen[2].label; v3Price = gen[2].pricePkr.toString()
+                            v4Label = gen[3].label; v4Price = gen[3].pricePkr.toString()
+                        }
+                    ) {
+                        Text("Auto-Fill", color = SmokedAmber, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+
+                @Composable
+                fun VarietyInputRow(
+                    index: Int,
+                    labelValue: String,
+                    onLabelChange: (String) -> Unit,
+                    priceValue: String,
+                    onPriceChange: (String) -> Unit
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = labelValue,
+                            onValueChange = { onLabelChange(it); errorText = null },
+                            label = { Text("Variety $index") },
+                            singleLine = true,
+                            modifier = Modifier
+                                .weight(1.2f)
+                                .testTag("dish_variety_label_$index")
+                        )
+                        OutlinedTextField(
+                            value = priceValue,
+                            onValueChange = { onPriceChange(it.filter { c -> c.isDigit() }); errorText = null },
+                            label = { Text("PKR") },
+                            singleLine = true,
+                            modifier = Modifier
+                                .weight(0.9f)
+                                .testTag("dish_variety_price_$index")
+                        )
+                    }
+                }
+
+                VarietyInputRow(1, v1Label, { v1Label = it }, v1Price, { v1Price = it })
+                VarietyInputRow(2, v2Label, { v2Label = it }, v2Price, { v2Price = it })
+                VarietyInputRow(3, v3Label, { v3Label = it }, v3Price, { v3Price = it })
+                VarietyInputRow(4, v4Label, { v4Label = it }, v4Price, { v4Price = it })
+
                 OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, maxLines = 3)
                 Text("Category", style = MaterialTheme.typography.labelMedium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -902,12 +1003,36 @@ private fun MenuDishEditorDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val price = priceText.toLongOrNull() ?: 0L
+                    val basePrice = priceText.toLongOrNull() ?: 0L
                     val prep = prepText.toLongOrNull() ?: 20L
+                    val rawVarieties = listOf(
+                        v1Label to (v1Price.toLongOrNull() ?: 0L),
+                        v2Label to (v2Price.toLongOrNull() ?: 0L),
+                        v3Label to (v3Price.toLongOrNull() ?: 0L),
+                        v4Label to (v4Price.toLongOrNull() ?: 0L)
+                    )
+                    val parsedVarieties = rawVarieties.mapNotNull { (lbl, p) ->
+                        val clean = lbl.trim()
+                        if (clean.isNotBlank() && p in 50L..250000L) DishVariety(clean, p) else null
+                    }
+                    val effectivePrice = if (basePrice in 50L..250000L) basePrice else (parsedVarieties.firstOrNull()?.pricePkr ?: 0L)
                     when {
                         name.trim().length < 2 -> errorText = "Enter a dish name (at least 2 characters)."
-                        price < 50L -> errorText = "Price must be at least Rs. 50."
-                        else -> onSave(name, category, description, price, imageKey, dailySpecial, available, spiceLevel, prep, broadcastAlert)
+                        effectivePrice < 50L -> errorText = "Base price must be at least Rs. 50."
+                        parsedVarieties.isEmpty() -> errorText = "Enter at least 1 valid variety with a PKR price >= Rs. 50."
+                        else -> onSave(
+                            name,
+                            category,
+                            description,
+                            effectivePrice,
+                            parsedVarieties,
+                            imageKey,
+                            dailySpecial,
+                            available,
+                            spiceLevel,
+                            prep,
+                            broadcastAlert
+                        )
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = SmokedAmber, contentColor = CharcoalDeep)

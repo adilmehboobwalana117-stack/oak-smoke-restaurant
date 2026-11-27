@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.AdminFinanceRepository
 import com.example.data.CartLine
 import com.example.data.DiningTable
+import com.example.data.DishVariety
 import com.example.data.ExpenseCategory
 import com.example.data.ExpenseEntry
 import com.example.data.FeedbackCategory
@@ -28,6 +29,9 @@ import com.example.data.SpiceLevel
 import com.example.data.StaffMember
 import com.example.data.UserProfile
 import com.example.data.UserRoleTier
+import com.example.data.encodeDishVarieties
+import com.example.data.parsedVarieties
+import com.example.data.resolveCartLines
 import com.example.services.FinancialReportService
 import com.example.services.FinancialReportSnapshot
 import com.example.services.MonthlyTrendPoint
@@ -158,10 +162,7 @@ class RestaurantViewModel(
         .toSafeStateFlow(emptyList(), "diningTables")
 
     val cartLines: StateFlow<List<CartLine>> = combine(menuItems, _cartQuantities) { items, qtys ->
-        items.mapNotNull { dish ->
-            val q = qtys[dish.id] ?: 0
-            if (q > 0 && dish.available) CartLine(dish, q) else null
-        }
+        resolveCartLines(items, qtys)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
     val customerOrders: StateFlow<List<OrderRecord>> = repo.observeCustomerOrders(currentUserId)
@@ -182,6 +183,13 @@ class RestaurantViewModel(
             else flowOf(emptyList())
         }
         .toSafeStateFlow(emptyList(), "allOrders")
+
+    val pendingSyncOrderIds: StateFlow<Set<String>> = effectiveRole
+        .flatMapLatest { role ->
+            if (role != UserRoleTier.CUSTOMER) repo.observePendingSyncOrderIds(currentUserId)
+            else flowOf(emptySet())
+        }
+        .toSafeStateFlow(emptySet(), "pendingSyncOrders")
 
     val allReservations: StateFlow<List<ReservationRecord>> = effectiveRole
         .flatMapLatest { role ->
@@ -539,9 +547,10 @@ class RestaurantViewModel(
         deliveryAddress: String,
         cartLines: List<CartLine>,
         notes: String,
-        onCreated: (OrderRecord) -> Unit
+        onCreated: (OrderRecord, Boolean) -> Unit
     ) {
         val staffId = roleGrant.value?.staffId?.ifBlank { if (isBootstrapAdmin) "OWNER" else "STAFF" } ?: "STAFF"
+        val onlineNow = isOnline.value
         viewModelScope.launch {
             _isBusy.value = true
             try {
@@ -553,11 +562,16 @@ class RestaurantViewModel(
                     deliveryAddress = deliveryAddress,
                     cartLines = cartLines,
                     staffId = staffId,
-                    notes = notes
+                    notes = notes,
+                    isOnline = onlineNow
                 )
-                res.onSuccess { createdOrder ->
-                    _snackbarMessage.value = "Order ${createdOrder.orderNumber} sent direct to Kitchen!"
-                    onCreated(createdOrder)
+                res.onSuccess { submission ->
+                    _snackbarMessage.value = if (submission.syncedOnline) {
+                        "Order ${submission.order.orderNumber} sent direct to Kitchen (Synced Online)!"
+                    } else {
+                        "Order ${submission.order.orderNumber} saved OFFLINE — ready to print & auto-syncs online!"
+                    }
+                    onCreated(submission.order, submission.syncedOnline)
                 }.onFailure { err ->
                     _snackbarMessage.value = err.message ?: "Unable to send order to kitchen."
                 }
@@ -573,21 +587,33 @@ class RestaurantViewModel(
         val earnRate = config.value?.loyaltyEarnPer100Pkr ?: 1L
         val riderName = ownStaffRecord.value?.fullName?.ifBlank { userDisplayName } ?: userDisplayName
         val riderPhone = ownStaffRecord.value?.phone.orEmpty()
-        val successMsg = if (nextStatus == OrderStatus.READY && order.orderType == OrderType.COD_DELIVERY.name) {
-            "Order ${order.orderNumber} READY! Sound alert sent to Rider & Customer."
-        } else {
-            "Order ${order.orderNumber} -> ${nextStatus.displayLabel}"
-        }
-        runMutation(successMsg) {
-            adminRepo.advanceOrderStatus(
-                order = order,
-                nextStatus = nextStatus,
-                staffId = staffId,
-                staffDocId = staffDocId,
-                earnPer100Pkr = earnRate,
-                riderName = riderName,
-                riderPhone = riderPhone
-            )
+        val onlineNow = isOnline.value
+        viewModelScope.launch {
+            _isBusy.value = true
+            try {
+                val res = adminRepo.advanceOrderStatus(
+                    order = order,
+                    nextStatus = nextStatus,
+                    staffId = staffId,
+                    staffDocId = staffDocId,
+                    earnPer100Pkr = earnRate,
+                    riderName = riderName,
+                    riderPhone = riderPhone,
+                    isOnline = onlineNow
+                )
+                res.onSuccess { syncedOnline ->
+                    _snackbarMessage.value = when {
+                        !syncedOnline -> "Order ${order.orderNumber} -> ${nextStatus.displayLabel} (Saved Offline · Auto-Syncs)"
+                        nextStatus == OrderStatus.READY && order.orderType == OrderType.COD_DELIVERY.name ->
+                            "Order ${order.orderNumber} READY! Sound alert sent to Rider & Customer."
+                        else -> "Order ${order.orderNumber} -> ${nextStatus.displayLabel}"
+                    }
+                }.onFailure { err ->
+                    _snackbarMessage.value = err.message ?: "Unable to update order status."
+                }
+            } finally {
+                _isBusy.value = false
+            }
         }
     }
 
@@ -631,6 +657,7 @@ class RestaurantViewModel(
         category: MenuCategory,
         description: String,
         pricePkr: Long,
+        varieties: List<DishVariety>,
         imageKey: String,
         dailySpecial: Boolean,
         available: Boolean,
@@ -638,10 +665,20 @@ class RestaurantViewModel(
         prepMinutes: Long,
         broadcastAlert: Boolean
     ) {
-        runMutation(if (existingId == null) "Added $name to menu" else "Updated $name") {
+        runMutation(if (existingId == null) "Added $name (${varieties.size} varieties) to menu" else "Updated $name") {
             adminRepo.saveMenuItem(
-                existingId, name, category, description, pricePkr, imageKey,
-                dailySpecial, available, spiceLevel, prepMinutes, broadcastAlert
+                existingId = existingId,
+                name = name,
+                category = category,
+                description = description,
+                pricePkr = pricePkr,
+                varieties = varieties,
+                imageKey = imageKey,
+                dailySpecial = dailySpecial,
+                available = available,
+                spiceLevel = spiceLevel,
+                prepMinutes = prepMinutes,
+                broadcastSpecialAlert = broadcastAlert
             )
         }
     }
@@ -651,8 +688,15 @@ class RestaurantViewModel(
     }
 
     fun updateMenuItemPrice(dish: MenuItem, newPricePkr: Long) {
+        val updatedVarieties = if (dish.varietiesDetail.isNotBlank()) {
+            val current = dish.parsedVarieties().toMutableList()
+            if (current.isNotEmpty()) {
+                current[0] = current[0].copy(pricePkr = newPricePkr)
+                encodeDishVarieties(current)
+            } else null
+        } else null
         runMutation("Updated ${dish.name} rate to Rs. $newPricePkr") {
-            adminRepo.updateMenuItemPrice(dish.id, newPricePkr)
+            adminRepo.updateMenuItemPrice(dish.id, newPricePkr, updatedVarieties)
         }
     }
 
@@ -663,7 +707,7 @@ class RestaurantViewModel(
     }
 
     fun seedStarterMenu() {
-        runMutation("Loaded starter Karahi & BBQ menu") {
+        runMutation("Loaded starter Karahi & BBQ menu with 4 varieties per dish") {
             adminRepo.seedStarterMenu()
         }
     }
@@ -773,7 +817,7 @@ class RestaurantViewModel(
     }
 
     fun seedStarterTables() {
-        runMutation("Loaded default Oak & Smoke tables & cabins") {
+        runMutation("Loaded all 25 Oak & Smoke dining tables & cabins") {
             adminRepo.seedStarterTables()
         }
     }

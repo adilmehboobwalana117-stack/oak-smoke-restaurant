@@ -154,7 +154,7 @@ service cloud.firestore {
         ]) &&
         data.keys().hasOnly([
           'catalogType', 'name', 'category', 'description', 'pricePkr',
-          'imageKey', 'dailySpecial', 'available', 'spiceLevel', 'prepMinutes',
+          'varietiesDetail', 'imageKey', 'dailySpecial', 'available', 'spiceLevel', 'prepMinutes',
           'createdAt', 'updatedAt'
         ]) &&
         data.catalogType == 'MENU' &&
@@ -162,6 +162,7 @@ service cloud.firestore {
         data.category in ['KARAHI', 'BBQ', 'PLATTERS', 'NAAN_SIDES', 'BEVERAGES'] &&
         data.description is string && data.description.size() <= 300 &&
         data.pricePkr is int && data.pricePkr >= 50 && data.pricePkr <= 250000 &&
+        (!('varietiesDetail' in data) || (data.varietiesDetail is string && data.varietiesDetail.size() <= 600)) &&
         data.imageKey is string && data.imageKey.size() <= 60 &&
         data.dailySpecial is bool &&
         data.available is bool &&

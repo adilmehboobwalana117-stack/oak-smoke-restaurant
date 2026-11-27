@@ -482,19 +482,38 @@ test("Menu, Inventory, Expenses, Staff Salaries, Feedback & Notifications respec
   const ownerDb = testEnv.authenticatedContext(OWNER_UID).firestore();
   const now = ts(-4000);
 
-  // Owner adds menu item; customer reads filtered menu
+  // Owner adds menu item with 4 product varieties; customer reads filtered menu
   await assertSucceeds(
     ownerDb.collection("menuItems").doc("bbq_platter").set({
       catalogType: "MENU",
       name: "Oak & Smoke Royal BBQ Platter",
       category: "PLATTERS",
       description: "Chicken Tikka, Malai Boti, Seekh Kebabs, Garlic Naan & Raita.",
-      pricePkr: 4200,
+      pricePkr: 2450,
+      varietiesDetail: "Solo (2P)||2450\nStandard (4P)||4450\nLarge (6P)||6450\nRoyal Feast (8P)||8400",
       imageKey: "platter",
       dailySpecial: true,
       available: true,
       spiceLevel: "MEDIUM",
       prepMinutes: 25,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+  // Oversized varietiesDetail (>600 chars) is rejected
+  await assertFails(
+    ownerDb.collection("menuItems").doc("bad_varieties").set({
+      catalogType: "MENU",
+      name: "Oversized Dish",
+      category: "BBQ",
+      description: "Test description.",
+      pricePkr: 500,
+      varietiesDetail: "V".repeat(650),
+      imageKey: "kebabs",
+      dailySpecial: false,
+      available: true,
+      spiceLevel: "MILD",
+      prepMinutes: 15,
       createdAt: now,
       updatedAt: now,
     })

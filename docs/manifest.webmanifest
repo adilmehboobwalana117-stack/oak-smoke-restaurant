@@ -1,0 +1,40 @@
+{
+  "name": "Oak & Smoke Restaurant Hasilpur",
+  "short_name": "Oak & Smoke",
+  "description": "PC & Mobile Installable POS, Kitchen Display (KOT), Owner Admin & Customer Menu for Oak & Smoke Restaurant Hasilpur — works online and offline with 25 tables and 4 varieties per dish.",
+  "start_url": "./app.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#14110F",
+  "theme_color": "#14110F",
+  "categories": ["food", "business", "productivity"],
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Staff Counter POS",
+      "short_name": "Counter POS",
+      "description": "Take offline & online orders across 25 tables with 4 varieties",
+      "url": "./app.html#pos"
+    },
+    {
+      "name": "Kitchen Display (KOT)",
+      "short_name": "Kitchen KOT",
+      "description": "Live price-free kitchen preparation tickets",
+      "url": "./app.html#kitchen"
+    },
+    {
+      "name": "Owner Admin Portal",
+      "short_name": "Admin",
+      "description": "Manage 4-variety menu rates, 25 tables & daily sales reports",
+      "url": "./app.html#admin"
+    }
+  ]
+}

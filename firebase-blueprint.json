@@ -74,6 +74,7 @@
         "category": { "type": "string", "enum": ["KARAHI", "BBQ", "PLATTERS", "NAAN_SIDES", "BEVERAGES"] },
         "description": { "type": "string" },
         "pricePkr": { "type": "integer" },
+        "varietiesDetail": { "type": "string", "description": "Encoded list of up to 4 dish varieties and PKR rates (Label||PricePkr per line)." },
         "imageKey": { "type": "string" },
         "dailySpecial": { "type": "boolean" },
         "available": { "type": "boolean" },

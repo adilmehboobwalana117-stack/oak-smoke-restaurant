@@ -76,6 +76,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -101,7 +102,10 @@ import com.example.data.MenuItem
 import com.example.data.OakAndSmokeSeeds
 import com.example.data.SeatingZone
 import com.example.data.SpiceLevel
+import com.example.data.cartItemKey
 import com.example.data.formatPkr
+import com.example.data.parsedVarieties
+import com.example.data.resolveCartLines
 import com.example.services.AppPwaQrService
 import com.example.ui.components.AppScreenshotsGallerySheet
 import com.example.ui.components.PrivacyAndScreenshotsCard
@@ -197,10 +201,7 @@ fun GuestCustomerShell(
 
     val catalogMenu = OakAndSmokeSeeds.starterMenu
     val cartLines = remember(cartQuantities) {
-        catalogMenu.mapNotNull { dish ->
-            val q = cartQuantities[dish.id] ?: 0
-            if (q > 0 && dish.available) CartLine(dish, q) else null
-        }
+        resolveCartLines(catalogMenu, cartQuantities)
     }
 
     BackHandler(enabled = selectedTab != "guest_menu") {
@@ -209,6 +210,7 @@ fun GuestCustomerShell(
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val useNavRail = maxWidth >= 600.dp
+        val maxContentWidth = if (maxWidth >= 840.dp) 1280.dp else 860.dp
 
         Scaffold(
             contentWindowInsets = WindowInsets.safeDrawing,
@@ -348,12 +350,12 @@ fun GuestCustomerShell(
                                 }
                         },
                         onDismiss = { showTopPwaQrStrip = false },
-                        modifier = Modifier.widthIn(max = 860.dp)
+                        modifier = Modifier.widthIn(max = maxContentWidth)
                     )
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .widthIn(max = 860.dp)
+                            .widthIn(max = maxContentWidth)
                     ) {
                         when (selectedTab) {
                             "guest_menu" -> GuestMenuTab(
@@ -387,7 +389,7 @@ fun GuestCustomerShell(
             onDismissRequest = { showGuestCheckoutSheet = false },
             containerColor = MaterialTheme.colorScheme.surface
         ) {
-            val subtotal = cartLines.sumOf { it.item.pricePkr * it.quantity }
+            val subtotal = cartLines.sumOf { it.unitPricePkr * it.quantity }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -418,12 +420,12 @@ fun GuestCustomerShell(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "${line.quantity}x ${line.item.name}",
+                                    text = "${line.quantity}x ${line.displayNameWithVariety()}",
                                     style = MaterialTheme.typography.bodyMedium,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Text(
-                                    text = formatPkr(line.item.pricePkr * line.quantity),
+                                    text = formatPkr(line.unitPricePkr * line.quantity),
                                     style = MonoPriceStyle,
                                     color = SmokedAmber
                                 )
@@ -518,7 +520,7 @@ private fun GuestMenuTab(
     }
 
     val cartItemCount = cartLines.sumOf { it.quantity }
-    val cartSubtotal = cartLines.sumOf { it.item.pricePkr * it.quantity }
+    val cartSubtotal = cartLines.sumOf { it.unitPricePkr * it.quantity }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -629,10 +631,15 @@ private fun GuestMenuTab(
                 item {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(specials, key = { "g_sp_${it.id}" }) { special ->
+                            val firstVariety = remember(special.id, special.varietiesDetail, special.pricePkr) {
+                                special.parsedVarieties().first()
+                            }
+                            val defaultKey = cartItemKey(special.id, firstVariety.label)
+                            val totalSpecialQty = cartLines.filter { it.item.id == special.id }.sumOf { it.quantity }
                             GuestSpecialCard(
                                 dish = special,
-                                qty = cartQuantities[special.id] ?: 0,
-                                onAdd = { onIncrementCart(special.id) }
+                                qty = totalSpecialQty,
+                                onAdd = { onIncrementCart(defaultKey) }
                             )
                         }
                     }
@@ -674,9 +681,9 @@ private fun GuestMenuTab(
             items(filteredItems, key = { "g_dish_${it.id}" }) { dish ->
                 GuestDishCard(
                     dish = dish,
-                    quantity = cartQuantities[dish.id] ?: 0,
-                    onIncrement = { onIncrementCart(dish.id) },
-                    onDecrement = { onDecrementCart(dish.id) }
+                    cartQuantities = cartQuantities,
+                    onIncrementKey = onIncrementCart,
+                    onDecrementKey = onDecrementCart
                 )
             }
         }
@@ -822,80 +829,118 @@ private fun GuestSpecialCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun GuestDishCard(
     dish: MenuItem,
-    quantity: Int,
-    onIncrement: () -> Unit,
-    onDecrement: () -> Unit
+    cartQuantities: Map<String, Int>,
+    onIncrementKey: (String) -> Unit,
+    onDecrementKey: (String) -> Unit
 ) {
+    val varieties = remember(dish.id, dish.varietiesDetail, dish.pricePkr) { dish.parsedVarieties() }
+    var selectedVarietyIdx by remember(dish.id, varieties.size) { mutableIntStateOf(0) }
+    val activeVariety = varieties.getOrElse(selectedVarietyIdx) { varieties.first() }
+    val activeKey = cartItemKey(dish.id, activeVariety.label)
+    val quantity = cartQuantities[activeKey] ?: 0
+
     SmokedCard {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Image(
-                painter = painterResource(id = resolveDishDrawable(dish.imageKey)),
-                contentDescription = dish.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(92.dp)
-                    .clip(RoundedCornerShape(14.dp))
-            )
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "${MenuCategory.fromRaw(dish.category).displayLabel} · ${SpiceLevel.fromRaw(dish.spiceLevel).displayLabel} · ${dish.prepMinutes}m",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SmokedAmber
+                Image(
+                    painter = painterResource(id = resolveDishDrawable(dish.imageKey)),
+                    contentDescription = dish.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(92.dp)
+                        .clip(RoundedCornerShape(14.dp))
                 )
-                Text(
-                    text = dish.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = dish.description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text(formatPkr(dish.pricePkr), style = MonoPriceStyle, color = SmokedAmber)
-                    if (quantity == 0) {
-                        Button(
-                            onClick = onIncrement,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = SmokedAmber, contentColor = CharcoalDeep),
-                            modifier = Modifier.testTag("guest_add_dish_${dish.id}")
-                        ) {
-                            Icon(Icons.Filled.Add, contentDescription = "Add ${dish.name}", modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Add")
-                        }
-                    } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = onDecrement, modifier = Modifier.size(48.dp)) {
-                                Icon(Icons.Filled.Remove, contentDescription = "Decrease ${dish.name}", tint = SmokedAmber)
+                    Text(
+                        text = "${MenuCategory.fromRaw(dish.category).displayLabel} · ${SpiceLevel.fromRaw(dish.spiceLevel).displayLabel} · ${dish.prepMinutes}m",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SmokedAmber
+                    )
+                    Text(
+                        text = dish.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = dish.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(formatPkr(activeVariety.pricePkr), style = MonoPriceStyle, color = SmokedAmber)
+                        if (quantity == 0) {
+                            Button(
+                                onClick = { onIncrementKey(activeKey) },
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = SmokedAmber, contentColor = CharcoalDeep),
+                                modifier = Modifier.testTag("guest_add_dish_${dish.id}")
+                            ) {
+                                Icon(Icons.Filled.Add, contentDescription = "Add ${dish.name}", modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Add")
                             }
-                            Text("$quantity", style = MonoPriceStyle)
-                            IconButton(onClick = onIncrement, modifier = Modifier.size(48.dp)) {
-                                Icon(Icons.Filled.Add, contentDescription = "Increase ${dish.name}", tint = SmokedAmber)
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { onDecrementKey(activeKey) }, modifier = Modifier.size(48.dp)) {
+                                    Icon(Icons.Filled.Remove, contentDescription = "Decrease ${dish.name}", tint = SmokedAmber)
+                                }
+                                Text("$quantity", style = MonoPriceStyle)
+                                IconButton(onClick = { onIncrementKey(activeKey) }, modifier = Modifier.size(48.dp)) {
+                                    Icon(Icons.Filled.Add, contentDescription = "Increase ${dish.name}", tint = SmokedAmber)
+                                }
                             }
                         }
+                    }
+                }
+            }
+
+            if (varieties.size > 1) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    varieties.forEachIndexed { idx, variety ->
+                        val vQty = cartQuantities[cartItemKey(dish.id, variety.label)] ?: 0
+                        FilterChip(
+                            selected = selectedVarietyIdx == idx,
+                            onClick = { selectedVarietyIdx = idx },
+                            label = {
+                                val badge = if (vQty > 0) " ($vQty)" else ""
+                                Text(
+                                    text = "${variety.label} · ${formatPkr(variety.pricePkr)}$badge",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = SmokedAmber,
+                                selectedLabelColor = CharcoalDeep
+                            )
+                        )
                     }
                 }
             }

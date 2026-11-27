@@ -298,6 +298,7 @@ private fun OakAndSmokeShell(
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val useNavRail = maxWidth >= 600.dp
+        val maxContentWidth = if (maxWidth >= 840.dp) 1280.dp else 860.dp
 
         Scaffold(
             contentWindowInsets = WindowInsets.safeDrawing,
@@ -438,12 +439,12 @@ private fun OakAndSmokeShell(
                                 }
                         },
                         onDismiss = { showTopPwaQrStrip = false },
-                        modifier = Modifier.widthIn(max = 860.dp)
+                        modifier = Modifier.widthIn(max = maxContentWidth)
                     )
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .widthIn(max = 860.dp)
+                            .widthIn(max = maxContentWidth)
                     ) {
                         when (selectedDestId) {
                             "menu" -> CustomerMenuScreen(

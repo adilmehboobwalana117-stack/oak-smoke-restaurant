@@ -165,6 +165,21 @@ class RestaurantRepository(private val db: FirebaseFirestore) {
         )
     }
 
+    fun observePendingSyncOrderIds(uid: String): Flow<Set<String>> = flow {
+        val path = "orders"
+        emitAll(
+            db.collection("orders")
+                .snapshots()
+                .map { snap ->
+                    snap.documents
+                        .filter { it.metadata.hasPendingWrites() }
+                        .map { it.id }
+                        .toSet()
+                }
+                .logAndRethrow(OperationType.LIST, path, uid)
+        )
+    }
+
     fun observeCustomerReservations(uid: String): Flow<List<ReservationRecord>> = flow {
         val path = "reservations"
         emitAll(
@@ -359,12 +374,12 @@ class RestaurantRepository(private val db: FirebaseFirestore) {
                 "Attach your current GPS location so our Rider can navigate directly to you."
             }
 
-            val subtotal = cartLines.sumOf { it.item.pricePkr * it.quantity }
+            val subtotal = cartLines.sumOf { it.unitPricePkr * it.quantity }
             val safeRedeem = redeemPoints.coerceIn(0L, currentLoyaltyPoints)
             val discount = (safeRedeem * pointValuePkr).coerceAtMost(subtotal)
             val total = (subtotal - discount).coerceAtLeast(0L)
             val itemCount = cartLines.sumOf { it.quantity }.toLong().coerceIn(1L, 100L)
-            val summary = cartLines.joinToString(", ") { "${it.quantity}x ${it.item.name}" }.take(1000)
+            val summary = cartLines.joinToString(", ") { "${it.quantity}x ${it.displayNameWithVariety()}" }.take(1000)
             val orderNum = "OS-${Random.nextInt(1000, 9999)}"
 
             val orderRef = db.collection("orders").document()

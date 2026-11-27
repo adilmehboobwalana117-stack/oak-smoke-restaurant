@@ -262,7 +262,7 @@ fun TopInstalledPwaQrStrip(
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        text = "PWA",
+                        text = "PC / PWA",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -567,7 +567,7 @@ fun PwaDownloadAndQrModal(
             HorizontalDivider(color = EmberBorder)
 
             Text(
-                text = "Display this QR code on Oak & Smoke tables or share the PWA button so customers in Hasilpur can open the digital menu instantly on any phone.",
+                text = "Display this QR code on Oak & Smoke tables or open the PC & Web PWA link in Chrome/Edge on Windows, Mac, or Chromebook and click 'Install App' for standalone PC Counter POS, Kitchen KOT, Admin & Customer access.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
