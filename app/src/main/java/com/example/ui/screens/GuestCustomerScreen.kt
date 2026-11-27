@@ -152,6 +152,7 @@ fun GuestCustomerShell(
 
     var selectedTab by remember { mutableStateOf("guest_menu") }
     var isSigningIn by remember { mutableStateOf(false) }
+    var lastAuthError by remember { mutableStateOf<String?>(null) }
     var showGuestCheckoutSheet by remember { mutableStateOf(false) }
     var showTopPwaQrStrip by remember { mutableStateOf(true) }
     var showPwaQrModal by remember { mutableStateOf(false) }
@@ -172,16 +173,19 @@ fun GuestCustomerShell(
     fun launchGoogleSignIn() {
         if (isSigningIn) return
         isSigningIn = true
+        lastAuthError = null
         AuthManager.onGoogleSignInClicked(
             context = context,
             credentialManager = credentialManager,
             onAuthSuccess = {
                 isSigningIn = false
+                lastAuthError = null
                 showGuestCheckoutSheet = false
                 onAuthSuccess()
             },
             onAuthError = { msg ->
                 isSigningIn = false
+                lastAuthError = msg
                 scope.launch { snackbarHostState.showSnackbar(msg) }
             },
             scope = scope,
@@ -373,6 +377,7 @@ fun GuestCustomerShell(
                             )
                             else -> GuestAccountSignInTab(
                                 isSigningIn = isSigningIn,
+                                authError = lastAuthError,
                                 onRequestSignIn = { launchGoogleSignIn() },
                                 onOpenPrivacyPolicy = { showPrivacyPolicy = true },
                                 onOpenScreenshots = { showScreenshotsGallery = true }
@@ -1034,6 +1039,7 @@ private fun GuestTablesPreviewTab(
 @Composable
 private fun GuestAccountSignInTab(
     isSigningIn: Boolean,
+    authError: String?,
     onRequestSignIn: () -> Unit,
     onOpenPrivacyPolicy: () -> Unit,
     onOpenScreenshots: () -> Unit
@@ -1054,11 +1060,11 @@ private fun GuestAccountSignInTab(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Guest Customer Mode", style = MaterialTheme.typography.titleLarge)
-                        StatusPill(label = "CUSTOMER ONLY", color = SmokedAmber)
+                        Text("1-Tap Email Sign-In", style = MaterialTheme.typography.titleLarge)
+                        StatusPill(label = "NO CODE NEEDED", color = CorianderGreen)
                     }
                     Text(
-                        text = "You are browsing Oak & Smoke Restaurant Hasilpur as a Guest Customer. Guest access is open for browsing the digital menu, daily specials, and dining seating, and is strictly restricted to the Customer domain.",
+                        text = "Tap below to sign in directly using your device's Google Email ID — no OTP or verification code required. Guest browsing stays open anytime for menu & seating.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1066,7 +1072,22 @@ private fun GuestAccountSignInTab(
                     GuestFeatureLine(Icons.Filled.Payments, "Place COD Orders with GPS Pin & Live Tracking")
                     GuestFeatureLine(Icons.Filled.TableRestaurant, "Book Tables & Receive Real-Time Sound Alerts")
                     GuestFeatureLine(Icons.Filled.Loyalty, "Earn & Redeem Loyalty Points on Every Order")
-                    GuestFeatureLine(Icons.Filled.Lock, "Staff, Rider & Owner Portals Require Authorized Sign-In")
+                    GuestFeatureLine(Icons.Filled.Lock, "Staff, Rider & Owner Portals Protected by Verified Email")
+
+                    if (authError != null) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                        ) {
+                            Text(
+                                text = authError,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
 
                     Spacer(Modifier.height(4.dp))
 
@@ -1085,7 +1106,11 @@ private fun GuestAccountSignInTab(
                             Spacer(Modifier.width(10.dp))
                             Text("Signing in...", fontWeight = FontWeight.Bold)
                         } else {
-                            Text("Sign in with Google", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = if (authError != null) "Retry Google Email Sign-In" else "Continue with Google Email",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }

@@ -6,3 +6,7 @@
 
 # Preserve ZXing QR Code encoder classes
 -keep class com.google.zxing.** { *; }
+
+# Preserve Credential Manager & Google Sign-In ID token classes for Play Console release builds
+-keep class androidx.credentials.** { *; }
+-keep class com.google.android.libraries.identity.googleid.** { *; }
