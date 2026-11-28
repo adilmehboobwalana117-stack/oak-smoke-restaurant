@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Loyalty
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RestaurantMenu
 import androidx.compose.material.icons.filled.Search
@@ -70,6 +72,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -113,6 +116,7 @@ import com.example.ui.components.PrivacyAndScreenshotsCard
 import com.example.ui.components.PrivacyPolicySheet
 import com.example.ui.components.PwaDownloadAndQrModal
 import com.example.ui.components.SectionHeader
+import com.example.ui.components.SelectOrScanTableSheet
 import com.example.ui.components.SmokedCard
 import com.example.ui.components.StatusPill
 import com.example.ui.components.TopBarQrPwaActionButton
@@ -142,6 +146,8 @@ private data class GuestNavDest(
 @Composable
 fun GuestCustomerShell(
     cartQuantities: Map<String, Int>,
+    activeTableLabel: String? = null,
+    onSelectTable: (String?) -> Unit = {},
     onIncrementCart: (String) -> Unit,
     onDecrementCart: (String) -> Unit,
     onAuthSuccess: () -> Unit
@@ -155,6 +161,7 @@ fun GuestCustomerShell(
     var isSigningIn by remember { mutableStateOf(false) }
     var lastAuthError by remember { mutableStateOf<String?>(null) }
     var showGuestCheckoutSheet by remember { mutableStateOf(false) }
+    var showTableSelectorSheet by remember { mutableStateOf(false) }
     var showTopPwaQrStrip by remember { mutableStateOf(true) }
     var showPwaQrModal by remember { mutableStateOf(false) }
     var showPrivacyPolicy by remember { mutableStateOf(false) }
@@ -231,9 +238,9 @@ fun GuestCustomerShell(
                                 color = MaterialTheme.colorScheme.onBackground
                             )
                             Text(
-                                text = "Hasilpur · Open Public Menu",
+                                text = if (activeTableLabel != null) "Seated at $activeTableLabel · Table QR Mode" else "Hasilpur · Open Public Menu",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = SmokedAmber
+                                color = if (activeTableLabel != null) CorianderGreen else SmokedAmber
                             )
                         }
                     },
@@ -361,6 +368,9 @@ fun GuestCustomerShell(
                                 catalog = catalogMenu,
                                 cartLines = cartLines,
                                 cartQuantities = cartQuantities,
+                                activeTableLabel = activeTableLabel,
+                                onOpenTableSelector = { showTableSelectorSheet = true },
+                                onClearTable = { onSelectTable(null) },
                                 onIncrementCart = onIncrementCart,
                                 onDecrementCart = onDecrementCart,
                                 onOpenCheckout = { showGuestCheckoutSheet = true },
@@ -368,7 +378,13 @@ fun GuestCustomerShell(
                                 onRequestSignIn = { launchGoogleSignIn() }
                             )
                             "guest_tables" -> GuestTablesPreviewTab(
+                                activeTableLabel = activeTableLabel,
                                 isSigningIn = isSigningIn,
+                                onCheckInTable = { label ->
+                                    onSelectTable(label)
+                                    selectedTab = "guest_menu"
+                                    scope.launch { snackbarHostState.showSnackbar("Checked into $label! Pick dishes to order directly to Kitchen.") }
+                                },
                                 onRequestSignIn = { launchGoogleSignIn() }
                             )
                             else -> GuestAccountSignInTab(
@@ -402,8 +418,14 @@ fun GuestCustomerShell(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Guest COD Cart Preview", style = MaterialTheme.typography.headlineSmall)
-                    StatusPill(label = "COD ONLY", color = CorianderGreen)
+                    Text(
+                        text = if (activeTableLabel != null) "$activeTableLabel · Direct Order" else "Guest COD Cart Preview",
+                        style = MaterialTheme.typography.headlineSmall
+                    )
+                    StatusPill(
+                        label = if (activeTableLabel != null) "DINE-IN" else "COD ONLY",
+                        color = CorianderGreen
+                    )
                 }
 
                 Surface(
@@ -441,12 +463,19 @@ fun GuestCustomerShell(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Estimated COD Total", style = MaterialTheme.typography.titleMedium)
-                    Text(formatPkr(subtotal), style = MonoPriceStyle, color = SmokedAmber)
+                    Text(
+                        text = if (activeTableLabel != null) "Pay at Counter / Table" else "Estimated COD Total",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(formatPkr(subtotal), style = MonoPriceStyle, color = if (activeTableLabel != null) CorianderGreen else SmokedAmber)
                 }
 
                 Text(
-                    text = "Sign in with Google to attach your delivery GPS pin for our Rider, place this Cash on Delivery order, and track live kitchen updates. Your cart items will stay saved.",
+                    text = if (activeTableLabel != null) {
+                        "Ordering directly for $activeTableLabel. Sign in with Google in 1 tap to send your order straight to the Oak & Smoke Kitchen — your cart & table stay saved."
+                    } else {
+                        "Sign in with Google to attach your delivery GPS pin for our Rider, place this Cash on Delivery order, and track live kitchen updates. Your cart items will stay saved."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -459,17 +488,36 @@ fun GuestCustomerShell(
                         .height(52.dp)
                         .testTag("guest_checkout_google_sign_in_btn"),
                     shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = SmokedAmber, contentColor = CharcoalDeep)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (activeTableLabel != null) CorianderGreen else SmokedAmber,
+                        contentColor = CharcoalDeep
+                    )
                 ) {
                     if (isSigningIn) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), color = CharcoalDeep, strokeWidth = 2.dp)
                     } else {
-                        Text("Sign in with Google to Place COD Order", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (activeTableLabel != null) "Sign in with Google · Send to $activeTableLabel" else "Sign in with Google to Place COD Order",
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
                 Spacer(Modifier.height(16.dp))
             }
         }
+    }
+
+    if (showTableSelectorSheet) {
+        SelectOrScanTableSheet(
+            tables = OakAndSmokeSeeds.starterTables,
+            currentTableLabel = activeTableLabel,
+            onDismiss = { showTableSelectorSheet = false },
+            onSelectTable = { label ->
+                onSelectTable(label)
+                scope.launch { snackbarHostState.showSnackbar("Seated at $label — add dishes to order directly to your table.") }
+            },
+            onClearTable = { onSelectTable(null) }
+        )
     }
 
     if (showPwaQrModal) {
@@ -495,6 +543,9 @@ private fun GuestMenuTab(
     catalog: List<MenuItem>,
     cartLines: List<CartLine>,
     cartQuantities: Map<String, Int>,
+    activeTableLabel: String?,
+    onOpenTableSelector: () -> Unit,
+    onClearTable: () -> Unit,
     onIncrementCart: (String) -> Unit,
     onDecrementCart: (String) -> Unit,
     onOpenCheckout: () -> Unit,
@@ -579,6 +630,91 @@ private fun GuestMenuTab(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = SmokedAmber
                             )
+                        }
+                    }
+                }
+            }
+
+            // Direct Table QR Check-In Banner
+            item {
+                if (activeTableLabel != null) {
+                    SmokedCard(borderColor = CorianderGreen) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.TableRestaurant,
+                                contentDescription = "Active table",
+                                tint = CorianderGreen,
+                                modifier = Modifier.size(26.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Seated at $activeTableLabel",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = CorianderGreen
+                                )
+                                Text(
+                                    text = "Table QR mode active. Pick dishes & tap Order to Table to send straight to Kitchen.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                TextButton(
+                                    onClick = onOpenTableSelector,
+                                    modifier = Modifier.testTag("guest_change_table_btn")
+                                ) {
+                                    Text("Change", color = SmokedAmber)
+                                }
+                                TextButton(
+                                    onClick = onClearTable,
+                                    modifier = Modifier.testTag("guest_clear_table_btn")
+                                ) {
+                                    Text("Delivery", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    SmokedCard(borderColor = CorianderGreen.copy(alpha = 0.55f)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.QrCodeScanner,
+                                contentDescription = "Order from table",
+                                tint = CorianderGreen,
+                                modifier = Modifier.size(26.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Seated at a Table? Order Direct",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = CorianderGreen
+                                )
+                                Text(
+                                    text = "Scan your table's QR card or pick Table 1–25 to order directly from your seat.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = onOpenTableSelector,
+                                border = BorderStroke(1.dp, CorianderGreen),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.testTag("guest_pick_table_btn")
+                            ) {
+                                Text("Pick Table", color = CorianderGreen, style = MaterialTheme.typography.labelMedium)
+                            }
                         }
                     }
                 }
@@ -715,13 +851,15 @@ private fun GuestMenuTab(
         }
 
         if (cartItemCount > 0) {
+            val isTableMode = activeTableLabel != null
+            val barColor = if (isTableMode) CorianderGreen else SmokedAmber
             Surface(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 shape = RoundedCornerShape(18.dp),
-                color = SmokedAmber,
+                color = barColor,
                 shadowElevation = 8.dp
             ) {
                 Row(
@@ -743,15 +881,15 @@ private fun GuestMenuTab(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Filled.ShoppingBag,
+                                imageVector = if (isTableMode) Icons.Filled.TableRestaurant else Icons.Filled.ShoppingBag,
                                 contentDescription = "Cart items",
-                                tint = SmokedAmber,
+                                tint = barColor,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
                         Column {
                             Text(
-                                text = "$cartItemCount items · Cash on Delivery",
+                                text = if (isTableMode) "$cartItemCount items · $activeTableLabel (Dine-In)" else "$cartItemCount items · Cash on Delivery",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = CharcoalDeep
                             )
@@ -766,12 +904,12 @@ private fun GuestMenuTab(
                         onClick = onOpenCheckout,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = CharcoalDeep,
-                            contentColor = SmokedAmber
+                            contentColor = barColor
                         ),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.testTag("guest_open_checkout_btn")
                     ) {
-                        Text("Checkout COD")
+                        Text(if (isTableMode) "Order to Table" else "Checkout COD")
                     }
                 }
             }
@@ -977,7 +1115,9 @@ private fun GuestDishCard(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun GuestTablesPreviewTab(
+    activeTableLabel: String?,
     isSigningIn: Boolean,
+    onCheckInTable: (String) -> Unit,
     onRequestSignIn: () -> Unit
 ) {
     val starterTables = OakAndSmokeSeeds.starterTables
@@ -988,8 +1128,8 @@ private fun GuestTablesPreviewTab(
     ) {
         item {
             SectionHeader(
-                title = "Dining Zones & Table Reservations",
-                subtitle = "Oak & Smoke Restaurant Hasilpur · Seating Preview"
+                title = "25 Tables · Tap Any Table to Order Direct",
+                subtitle = "Oak & Smoke Restaurant Hasilpur · Scan Table QR or tap your table below"
             )
         }
 
@@ -1010,15 +1150,20 @@ private fun GuestTablesPreviewTab(
                     }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         zoneTables.forEach { tbl ->
+                            val isSelected = activeTableLabel.equals(tbl.label, ignoreCase = true)
                             Surface(
-                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                color = if (isSelected) CorianderGreen.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant,
                                 shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, EmberBorder)
+                                border = BorderStroke(1.dp, if (isSelected) CorianderGreen else EmberBorder),
+                                modifier = Modifier
+                                    .clickable { onCheckInTable(tbl.label) }
+                                    .testTag("guest_table_chip_${tbl.id}")
                             ) {
                                 Text(
-                                    text = "${tbl.label} (${tbl.capacity} seats)",
+                                    text = "${tbl.label} (${tbl.capacity}p)",
                                     style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    color = if (isSelected) CorianderGreen else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                 )
                             }
                         }

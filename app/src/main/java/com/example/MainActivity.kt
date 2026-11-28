@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -80,6 +81,7 @@ import com.example.services.AppDownloadTarget
 import com.example.services.AppPwaQrService
 import com.example.services.LocalNotificationHelper
 import com.example.services.NetworkConnectivityObserver
+import com.example.services.TableQrService
 import com.example.ui.components.OfflineStatusBanner
 import com.example.ui.components.PwaDownloadAndQrModal
 import com.example.ui.components.StatusPill
@@ -104,21 +106,45 @@ import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private val _scannedTableLabel = MutableStateFlow<String?>(null)
+    val scannedTableLabel: StateFlow<String?> = _scannedTableLabel.asStateFlow()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         LocalNotificationHelper.ensureChannel(this)
+        handleIncomingTableIntent(intent)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(CharcoalDeep.toArgb()),
             navigationBarStyle = SystemBarStyle.dark(CharcoalDeep.toArgb())
         )
         setContent {
             OakAndSmokeTheme {
-                AppNavigation()
+                val deepLinkedTable by scannedTableLabel.collectAsStateWithLifecycle()
+                AppNavigation(
+                    scannedTableLabel = deepLinkedTable,
+                    onUpdateScannedTable = { _scannedTableLabel.value = it }
+                )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingTableIntent(intent)
+    }
+
+    private fun handleIncomingTableIntent(intent: Intent?) {
+        val parsed = TableQrService.parseTableFromUri(intent?.data)
+        if (parsed != null) {
+            _scannedTableLabel.value = parsed.tableLabel
         }
     }
 }
@@ -132,13 +158,19 @@ internal fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
 }
 
 @Composable
-fun AppNavigation(auth: FirebaseAuth = Firebase.auth) {
+fun AppNavigation(
+    auth: FirebaseAuth = Firebase.auth,
+    scannedTableLabel: String? = null,
+    onUpdateScannedTable: (String?) -> Unit = {}
+) {
     val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
     var guestCartQuantities by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     val user = currentUser
     if (user == null) {
         GuestCustomerShell(
             cartQuantities = guestCartQuantities,
+            activeTableLabel = scannedTableLabel,
+            onSelectTable = onUpdateScannedTable,
             onIncrementCart = { itemId ->
                 guestCartQuantities = guestCartQuantities.toMutableMap().apply {
                     put(itemId, (get(itemId) ?: 0) + 1)
@@ -160,6 +192,8 @@ fun AppNavigation(auth: FirebaseAuth = Firebase.auth) {
                 userEmail = user.email ?: "",
                 userEmailVerified = user.isEmailVerified,
                 initialGuestCart = guestCartQuantities,
+                scannedTableLabel = scannedTableLabel,
+                onScannedTableConsumed = { onUpdateScannedTable(null) },
                 onGuestCartMerged = { guestCartQuantities = emptyMap() }
             )
         }
@@ -182,6 +216,8 @@ private fun OakAndSmokeShell(
     userEmail: String,
     userEmailVerified: Boolean,
     initialGuestCart: Map<String, Int> = emptyMap(),
+    scannedTableLabel: String? = null,
+    onScannedTableConsumed: () -> Unit = {},
     onGuestCartMerged: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -232,6 +268,17 @@ private fun OakAndSmokeShell(
     }
     val activePublicQrUrl = remember(configPublicUrl, context) {
         AppPwaQrService.resolveTargetUrl(context, AppDownloadTarget.PUBLIC_DOWNLOAD, configPublicUrl)
+    }
+
+    // Apply scanned Table QR deep link straight into Customer Dine-In Menu
+    LaunchedEffect(scannedTableLabel) {
+        if (!scannedTableLabel.isNullOrBlank()) {
+            viewModel.setActiveDineInTable(scannedTableLabel)
+            viewModel.setPortalMode(PortalMode.CUSTOMER)
+            selectedDestId = "menu"
+            viewModel.showMessage("Table QR active: Ordering directly for $scannedTableLabel!")
+            onScannedTableConsumed()
+        }
     }
 
     // Carry over any dishes the customer added while browsing in Guest Customer mode

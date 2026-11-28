@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.TableRestaurant
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -49,33 +50,40 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.DiningTable
 import com.example.data.SeatingZone
+import com.example.ui.components.AllTablesQrStudioSheet
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.SmokedCard
 import com.example.ui.components.StatusPill
+import com.example.ui.components.TableQrDetailSheet
 import com.example.ui.theme.CharcoalDeep
 import com.example.ui.theme.CorianderGreen
 import com.example.ui.theme.CrimsonEmber
 import com.example.ui.theme.MonoPriceStyle
 import com.example.ui.theme.SmokedAmber
+import com.example.viewmodel.PortalMode
 import com.example.viewmodel.RestaurantViewModel
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun OwnerTablesTab(viewModel: RestaurantViewModel) {
     val tables by viewModel.diningTables.collectAsStateWithLifecycle()
+    val config by viewModel.config.collectAsStateWithLifecycle()
     val isBusy by viewModel.isBusy.collectAsStateWithLifecycle()
 
     var selectedZone by remember { mutableStateOf<SeatingZone?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var editingTable by remember { mutableStateOf<DiningTable?>(null) }
     var deletingTable by remember { mutableStateOf<DiningTable?>(null) }
+    var qrTableDetail by remember { mutableStateOf<DiningTable?>(null) }
+    var showAllTablesQrStudio by remember { mutableStateOf(false) }
 
     val filteredTables = remember(tables, selectedZone) {
         if (selectedZone == null) tables else tables.filter { it.zone == selectedZone?.name }
     }
     val totalSeats = tables.filter { it.available }.sumOf { it.capacity }
     val activeCount = tables.count { it.available }
+    val configPublicUrl = config?.publicDownloadUrl.orEmpty()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -84,20 +92,69 @@ fun OwnerTablesTab(viewModel: RestaurantViewModel) {
     ) {
         item {
             SectionHeader(
-                title = "Dining Tables & Cabins",
+                title = "Dining Tables & QR Studio",
                 subtitle = "${tables.size} tables ($activeCount active · $totalSeats seats)",
                 trailing = {
-                    Button(
-                        onClick = { showCreateDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = SmokedAmber, contentColor = CharcoalDeep),
-                        modifier = Modifier.testTag("add_dining_table_btn")
-                    ) {
-                        Icon(Icons.Filled.Add, contentDescription = "Add Table", modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Table")
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(
+                            onClick = { showAllTablesQrStudio = true },
+                            border = BorderStroke(1.dp, SmokedAmber),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.testTag("open_all_table_qrs_btn")
+                        ) {
+                            Icon(Icons.Filled.QrCode2, contentDescription = "All Table QRs", tint = SmokedAmber, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("All QRs", color = SmokedAmber)
+                        }
+                        Button(
+                            onClick = { showCreateDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = SmokedAmber, contentColor = CharcoalDeep),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.testTag("add_dining_table_btn")
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = "Add Table", modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Table")
+                        }
                     }
                 }
             )
+        }
+
+        // Table QR Ordering Highlight Card
+        item {
+            SmokedCard(borderColor = CorianderGreen.copy(alpha = 0.65f)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(
+                            text = "Unique QR Code for Every Table",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = CorianderGreen
+                        )
+                        Text(
+                            text = "Print individual table tents or all ${tables.size.coerceAtLeast(25)} table QR cards in one A4 PDF so guests scan & order directly from their table.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Button(
+                        onClick = { showAllTablesQrStudio = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = CorianderGreen, contentColor = CharcoalDeep),
+                        modifier = Modifier.testTag("launch_25_qr_studio_btn")
+                    ) {
+                        Icon(Icons.Filled.QrCode2, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("25 QRs", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
 
         item {
@@ -237,6 +294,18 @@ fun OwnerTablesTab(viewModel: RestaurantViewModel) {
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { qrTableDetail = table },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("qr_table_${table.id}")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.QrCode2,
+                                    contentDescription = "Generate QR code for ${table.label}",
+                                    tint = CorianderGreen
+                                )
+                            }
                             Switch(
                                 checked = table.available,
                                 onCheckedChange = { checked ->
@@ -265,6 +334,33 @@ fun OwnerTablesTab(viewModel: RestaurantViewModel) {
                 }
             }
         }
+    }
+
+    if (showAllTablesQrStudio) {
+        AllTablesQrStudioSheet(
+            tables = tables,
+            configPublicUrl = configPublicUrl,
+            onDismiss = { showAllTablesQrStudio = false },
+            onFeedback = { msg -> viewModel.showMessage(msg) },
+            onSelectTableForDetail = { selected ->
+                showAllTablesQrStudio = false
+                qrTableDetail = selected
+            }
+        )
+    }
+
+    qrTableDetail?.let { targetTable ->
+        TableQrDetailSheet(
+            table = targetTable,
+            configPublicUrl = configPublicUrl,
+            onDismiss = { qrTableDetail = null },
+            onFeedback = { msg -> viewModel.showMessage(msg) },
+            onOrderForThisTable = { lbl ->
+                viewModel.setActiveDineInTable(lbl)
+                viewModel.setPortalMode(PortalMode.CUSTOMER)
+                viewModel.showMessage("Switched to Customer Menu for $lbl (Dine-In QR preview).")
+            }
+        )
     }
 
     if (showCreateDialog || editingTable != null) {

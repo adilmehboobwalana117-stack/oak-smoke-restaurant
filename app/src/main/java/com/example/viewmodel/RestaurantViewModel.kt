@@ -123,6 +123,9 @@ class RestaurantViewModel(
     private val _cartQuantities = MutableStateFlow<Map<String, Int>>(emptyMap())
     val cartQuantities: StateFlow<Map<String, Int>> = _cartQuantities.asStateFlow()
 
+    private val _activeDineInTable = MutableStateFlow<String?>(null)
+    val activeDineInTable: StateFlow<String?> = _activeDineInTable.asStateFlow()
+
     val isOnline: StateFlow<Boolean> = connectivityObserver.observeIsOnline()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), true)
 
@@ -367,6 +370,11 @@ class RestaurantViewModel(
         _cartQuantities.value = emptyMap()
     }
 
+    fun setActiveDineInTable(tableLabel: String?) {
+        val cleaned = tableLabel?.trim()?.take(40).orEmpty()
+        _activeDineInTable.value = cleaned.ifBlank { null }
+    }
+
     fun mergeGuestCart(guestQuantities: Map<String, Int>) {
         if (guestQuantities.isEmpty()) return
         _cartQuantities.value = _cartQuantities.value.toMutableMap().apply {
@@ -436,6 +444,43 @@ class RestaurantViewModel(
                     onPlaced()
                 }.onFailure { err ->
                     _snackbarMessage.value = err.message ?: "Could not place COD order."
+                }
+            } finally {
+                _isBusy.value = false
+            }
+        }
+    }
+
+    fun placeCustomerTableOrder(
+        tableLabel: String,
+        customerName: String,
+        customerPhone: String,
+        redeemPoints: Long,
+        notes: String,
+        onPlaced: () -> Unit
+    ) {
+        val lines = cartLines.value
+        val currentPts = userProfile.value?.loyaltyPoints ?: 0L
+        val pointValue = config.value?.loyaltyPointValuePkr ?: 5L
+        viewModelScope.launch {
+            _isBusy.value = true
+            try {
+                val res = repo.placeCustomerTableOrder(
+                    tableLabel = tableLabel,
+                    customerName = customerName,
+                    customerPhone = customerPhone,
+                    cartLines = lines,
+                    redeemPoints = redeemPoints,
+                    currentLoyaltyPoints = currentPts,
+                    pointValuePkr = pointValue,
+                    notes = notes
+                )
+                res.onSuccess { orderNum ->
+                    clearCart()
+                    _snackbarMessage.value = "Table Order $orderNum sent straight to Oak & Smoke Kitchen for $tableLabel!"
+                    onPlaced()
+                }.onFailure { err ->
+                    _snackbarMessage.value = err.message ?: "Could not place table order."
                 }
             } finally {
                 _isBusy.value = false

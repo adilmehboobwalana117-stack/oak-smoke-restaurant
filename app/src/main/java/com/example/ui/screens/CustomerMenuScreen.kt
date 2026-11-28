@@ -34,11 +34,13 @@ import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Loyalty
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RestaurantMenu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.TableRestaurant
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -92,6 +94,7 @@ import com.example.services.CapturedLocation
 import com.example.services.LocationHelper
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.SectionHeader
+import com.example.ui.components.SelectOrScanTableSheet
 import com.example.ui.components.SmokedCard
 import com.example.ui.components.StatusPill
 import com.example.ui.components.resolveDishDrawable
@@ -121,10 +124,13 @@ fun CustomerMenuScreen(
     val profile by viewModel.userProfile.collectAsStateWithLifecycle()
     val config by viewModel.config.collectAsStateWithLifecycle()
     val isBusy by viewModel.isBusy.collectAsStateWithLifecycle()
+    val activeDineInTable by viewModel.activeDineInTable.collectAsStateWithLifecycle()
+    val diningTables by viewModel.diningTables.collectAsStateWithLifecycle()
 
     var selectedFilter by remember { mutableStateOf("ALL") }
     var searchQuery by remember { mutableStateOf("") }
     var showCheckoutSheet by remember { mutableStateOf(false) }
+    var showTableSelectorSheet by remember { mutableStateOf(false) }
 
     val allItems = (menuState as? UiState.Success)?.data ?: emptyList()
     val specials by remember(allItems) {
@@ -191,7 +197,10 @@ fun CustomerMenuScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            StatusPill(label = "COD ONLY · HASILPUR", color = SmokedAmber)
+                            StatusPill(
+                                label = if (activeDineInTable != null) "SEATED · ${activeDineInTable!!.uppercase()}" else "COD & TABLE QR · HASILPUR",
+                                color = if (activeDineInTable != null) CorianderGreen else SmokedAmber
+                            )
                             Surface(
                                 shape = RoundedCornerShape(50),
                                 color = CharcoalDeep.copy(alpha = 0.8f),
@@ -228,6 +237,91 @@ fun CustomerMenuScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = SmokedAmber
                             )
+                        }
+                    }
+                }
+            }
+
+            // Direct Table QR Check-In / Active Table Ordering Banner
+            item {
+                if (activeDineInTable != null) {
+                    SmokedCard(borderColor = CorianderGreen) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.TableRestaurant,
+                                contentDescription = "Active table",
+                                tint = CorianderGreen,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Seated at $activeDineInTable",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = CorianderGreen
+                                )
+                                Text(
+                                    text = "Direct Table QR Ordering active — sends straight to Kitchen with no delivery address needed.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                TextButton(
+                                    onClick = { showTableSelectorSheet = true },
+                                    modifier = Modifier.testTag("change_table_btn")
+                                ) {
+                                    Text("Change", color = SmokedAmber)
+                                }
+                                TextButton(
+                                    onClick = { viewModel.setActiveDineInTable(null) },
+                                    modifier = Modifier.testTag("clear_table_mode_btn")
+                                ) {
+                                    Text("Delivery", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    SmokedCard(borderColor = SmokedAmber.copy(alpha = 0.5f)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.QrCodeScanner,
+                                contentDescription = "Table QR order",
+                                tint = SmokedAmber,
+                                modifier = Modifier.size(26.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Dining at Oak & Smoke?",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = SmokedAmber
+                                )
+                                Text(
+                                    text = "Scan your table's QR code or pick Table 1–25 to order directly to your table.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { showTableSelectorSheet = true },
+                                border = BorderStroke(1.dp, SmokedAmber),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.testTag("open_table_selector_btn")
+                            ) {
+                                Text("Pick Table", color = SmokedAmber, style = MaterialTheme.typography.labelMedium)
+                            }
                         }
                     }
                 }
@@ -384,15 +478,17 @@ fun CustomerMenuScreen(
             }
         }
 
-        // Sticky Floating COD Cart Bar
+        // Sticky Floating Cart Bar (Table Dine-In or COD Delivery)
         if (cartItemCount > 0) {
+            val isTableMode = activeDineInTable != null
+            val barColor = if (isTableMode) CorianderGreen else SmokedAmber
             Surface(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 shape = RoundedCornerShape(18.dp),
-                color = SmokedAmber,
+                color = barColor,
                 shadowElevation = 8.dp
             ) {
                 Row(
@@ -414,15 +510,15 @@ fun CustomerMenuScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Filled.ShoppingBag,
+                                imageVector = if (isTableMode) Icons.Filled.TableRestaurant else Icons.Filled.ShoppingBag,
                                 contentDescription = "Cart items",
-                                tint = SmokedAmber,
+                                tint = barColor,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
                         Column {
                             Text(
-                                text = "$cartItemCount items · Cash on Delivery",
+                                text = if (isTableMode) "$cartItemCount items · $activeDineInTable (Dine-In)" else "$cartItemCount items · Cash on Delivery",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = CharcoalDeep
                             )
@@ -437,12 +533,12 @@ fun CustomerMenuScreen(
                         onClick = { showCheckoutSheet = true },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = CharcoalDeep,
-                            contentColor = SmokedAmber
+                            contentColor = barColor
                         ),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.testTag("open_cod_checkout_btn")
                     ) {
-                        Text("Checkout COD")
+                        Text(if (isTableMode) "Order to Table" else "Checkout COD")
                     }
                 }
             }
@@ -456,12 +552,26 @@ fun CustomerMenuScreen(
         ) {
             CodCheckoutSheetContent(
                 cartLines = cartLines,
+                activeTableLabel = activeDineInTable,
                 defaultName = profile?.displayName?.ifBlank { viewModel.userDisplayName } ?: viewModel.userDisplayName,
                 defaultPhone = profile?.phone.orEmpty(),
                 defaultAddress = profile?.deliveryAddress.orEmpty(),
                 availablePoints = profile?.loyaltyPoints ?: 0L,
                 pointValuePkr = config?.loyaltyPointValuePkr ?: 5L,
                 isBusy = isBusy,
+                onOpenTablePicker = { showTableSelectorSheet = true },
+                onPlaceTableOrder = { tableLabel, name, phone, redeemPts, notes ->
+                    viewModel.placeCustomerTableOrder(
+                        tableLabel = tableLabel,
+                        customerName = name,
+                        customerPhone = phone,
+                        redeemPoints = redeemPts,
+                        notes = notes
+                    ) {
+                        showCheckoutSheet = false
+                        onNavigateToOrders()
+                    }
+                },
                 onPlaceOrder = { name, phone, address, loc, redeemPts, notes ->
                     viewModel.placeCodOrder(
                         customerName = name,
@@ -480,6 +590,16 @@ fun CustomerMenuScreen(
                 }
             )
         }
+    }
+
+    if (showTableSelectorSheet) {
+        SelectOrScanTableSheet(
+            tables = diningTables,
+            currentTableLabel = activeDineInTable,
+            onDismiss = { showTableSelectorSheet = false },
+            onSelectTable = { label -> viewModel.setActiveDineInTable(label) },
+            onClearTable = { viewModel.setActiveDineInTable(null) }
+        )
     }
 }
 
@@ -722,17 +842,21 @@ private fun MenuDishCard(
 @Composable
 private fun CodCheckoutSheetContent(
     cartLines: List<CartLine>,
+    activeTableLabel: String?,
     defaultName: String,
     defaultPhone: String,
     defaultAddress: String,
     availablePoints: Long,
     pointValuePkr: Long,
     isBusy: Boolean,
+    onOpenTablePicker: () -> Unit,
+    onPlaceTableOrder: (tableLabel: String, name: String, phone: String, redeemPts: Long, notes: String) -> Unit,
     onPlaceOrder: (name: String, phone: String, address: String, location: CapturedLocation, redeemPts: Long, notes: String) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    var isTableDineIn by remember(activeTableLabel) { mutableStateOf(activeTableLabel != null) }
     var name by remember { mutableStateOf(defaultName) }
     var phone by remember { mutableStateOf(defaultPhone) }
     var address by remember { mutableStateOf(defaultAddress) }
@@ -792,10 +916,48 @@ private fun CodCheckoutSheetContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Cash on Delivery Checkout",
+                text = if (isTableDineIn) "Direct Table Order" else "Cash on Delivery Checkout",
                 style = MaterialTheme.typography.headlineSmall
             )
-            StatusPill(label = "COD ONLY", color = CorianderGreen)
+            StatusPill(
+                label = if (isTableDineIn) (activeTableLabel ?: "TABLE QR") else "COD ONLY",
+                color = CorianderGreen
+            )
+        }
+
+        // Order Mode Switcher: Direct Table Dine-In vs COD Delivery
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilterChip(
+                selected = isTableDineIn,
+                onClick = { isTableDineIn = true },
+                label = { Text("Table Dine-In") },
+                leadingIcon = { Icon(Icons.Filled.TableRestaurant, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = CorianderGreen,
+                    selectedLabelColor = CharcoalDeep,
+                    selectedLeadingIconColor = CharcoalDeep
+                ),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("checkout_mode_table_chip")
+            )
+            FilterChip(
+                selected = !isTableDineIn,
+                onClick = { isTableDineIn = false },
+                label = { Text("COD Delivery") },
+                leadingIcon = { Icon(Icons.Filled.MyLocation, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = SmokedAmber,
+                    selectedLabelColor = CharcoalDeep,
+                    selectedLeadingIconColor = CharcoalDeep
+                ),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("checkout_mode_cod_chip")
+            )
         }
 
         Surface(
@@ -827,6 +989,52 @@ private fun CodCheckoutSheetContent(
             }
         }
 
+        if (isTableDineIn) {
+            Surface(
+                color = if (activeTableLabel != null) CorianderGreen.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, if (activeTableLabel != null) CorianderGreen else SmokedAmber)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.TableRestaurant,
+                            contentDescription = "Selected table",
+                            tint = if (activeTableLabel != null) CorianderGreen else SmokedAmber
+                        )
+                        Column {
+                            Text(
+                                text = activeTableLabel ?: "No Table Selected Yet",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = if (activeTableLabel != null) CorianderGreen else SmokedAmber
+                            )
+                            Text(
+                                text = if (activeTableLabel != null) "Order fires directly to Kitchen for $activeTableLabel" else "Pick your table (1–25) to order straight from your seat",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    TextButton(
+                        onClick = onOpenTablePicker,
+                        modifier = Modifier.testTag("checkout_pick_table_btn")
+                    ) {
+                        Text(if (activeTableLabel != null) "Change" else "Select", color = SmokedAmber)
+                    }
+                }
+            }
+        }
+
         OutlinedTextField(
             value = name,
             onValueChange = { name = it },
@@ -837,12 +1045,13 @@ private fun CodCheckoutSheetContent(
         OutlinedTextField(
             value = phone,
             onValueChange = { phone = it },
-            label = { Text("Mobile Number (e.g., 0300-1234567)") },
+            label = { Text(if (isTableDineIn) "Mobile Number (optional)" else "Mobile Number (e.g., 0300-1234567)") },
             singleLine = true,
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("checkout_phone_input")
         )
+        if (!isTableDineIn) {
         // Mandatory Current GPS Location Card for Rider Navigation
         Surface(
             color = if (capturedLocation != null) CorianderGreen.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant,
@@ -967,10 +1176,11 @@ private fun CodCheckoutSheetContent(
                 .fillMaxWidth()
                 .testTag("checkout_address_input")
         )
+        }
         OutlinedTextField(
             value = notes,
             onValueChange = { notes = it },
-            label = { Text("Kitchen / Delivery Notes (optional)") },
+            label = { Text(if (isTableDineIn) "Kitchen Notes (spice level, serve order)" else "Kitchen / Delivery Notes (optional)") },
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -1035,32 +1245,67 @@ private fun CodCheckoutSheetContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(Icons.Filled.Payments, contentDescription = "Cash on Delivery", tint = SmokedAmber)
-                Text("Payable Cash on Delivery", style = MaterialTheme.typography.titleMedium)
+                Icon(
+                    imageVector = if (isTableDineIn) Icons.Filled.TableRestaurant else Icons.Filled.Payments,
+                    contentDescription = if (isTableDineIn) "Pay at Counter / Table" else "Cash on Delivery",
+                    tint = if (isTableDineIn) CorianderGreen else SmokedAmber
+                )
+                Text(
+                    text = if (isTableDineIn) "Pay at Counter / Table" else "Payable Cash on Delivery",
+                    style = MaterialTheme.typography.titleMedium
+                )
             }
-            Text(formatPkr(totalPkr), style = MonoPriceStyle, color = SmokedAmber)
+            Text(formatPkr(totalPkr), style = MonoPriceStyle, color = if (isTableDineIn) CorianderGreen else SmokedAmber)
         }
 
-        Button(
-            onClick = {
-                capturedLocation?.let { loc ->
-                    onPlaceOrder(name, phone, address, loc, redeemedPoints, notes)
+        if (isTableDineIn) {
+            Button(
+                onClick = {
+                    val tbl = activeTableLabel
+                    if (tbl.isNullOrBlank()) {
+                        onOpenTablePicker()
+                    } else {
+                        onPlaceTableOrder(tbl, name, phone, redeemedPoints, notes)
+                    }
+                },
+                enabled = !isBusy,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .testTag("confirm_table_order_btn"),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = CorianderGreen, contentColor = CharcoalDeep)
+            ) {
+                if (isBusy) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = CharcoalDeep, strokeWidth = 2.dp)
+                } else if (activeTableLabel.isNullOrBlank()) {
+                    Text("Select Your Table (1–25) to Order", fontWeight = FontWeight.Bold)
+                } else {
+                    Text("Send to Kitchen ($activeTableLabel) · ${formatPkr(totalPkr)}", fontWeight = FontWeight.Bold)
                 }
-            },
-            enabled = !isBusy && !isFetchingLocation && capturedLocation != null && phone.trim().length >= 7 && address.trim().length >= 4,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
-                .testTag("confirm_cod_order_btn"),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = SmokedAmber, contentColor = CharcoalDeep)
-        ) {
-            if (isBusy) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = CharcoalDeep, strokeWidth = 2.dp)
-            } else if (capturedLocation == null) {
-                Text("Attach Current Location to Place Order", fontWeight = FontWeight.Bold)
-            } else {
-                Text("Confirm COD Order · ${formatPkr(totalPkr)}", fontWeight = FontWeight.Bold)
+            }
+        } else {
+            Button(
+                onClick = {
+                    capturedLocation?.let { loc ->
+                        onPlaceOrder(name, phone, address, loc, redeemedPoints, notes)
+                    }
+                },
+                enabled = !isBusy && !isFetchingLocation && capturedLocation != null && phone.trim().length >= 7 && address.trim().length >= 4,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .testTag("confirm_cod_order_btn"),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = SmokedAmber, contentColor = CharcoalDeep)
+            ) {
+                if (isBusy) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = CharcoalDeep, strokeWidth = 2.dp)
+                } else if (capturedLocation == null) {
+                    Text("Attach Current Location to Place Order", fontWeight = FontWeight.Bold)
+                } else {
+                    Text("Confirm COD Order · ${formatPkr(totalPkr)}", fontWeight = FontWeight.Bold)
+                }
             }
         }
         Spacer(Modifier.height(20.dp))

@@ -364,8 +364,36 @@
       posCart: {}, // key: "dishId::varietyLabel" -> qty
       custCart: {},
       custSearch: '',
-      custCategory: 'ALL'
+      custCategory: 'ALL',
+      custTableLabel: ''
     };
+
+    function buildTableOrderUrl(table) {
+      const base = `${location.origin}${location.pathname}`;
+      return `${base}?table=${encodeURIComponent(table.id)}&label=${encodeURIComponent(table.label)}#customer`;
+    }
+
+    function applyTableFromUrl() {
+      try {
+        const params = new URLSearchParams(location.search);
+        const rawId = (params.get('table') || params.get('tableId') || params.get('t') || '').trim();
+        const rawLabel = (params.get('label') || params.get('tableLabel') || '').trim();
+        if (!rawId && !rawLabel) return;
+        const match =
+          state.tables.find(t => t.id.toLowerCase() === rawId.toLowerCase()) ||
+          state.tables.find(t => t.label.toLowerCase() === rawLabel.toLowerCase()) ||
+          state.tables.find(t => t.label.toLowerCase() === rawId.toLowerCase()) ||
+          (() => {
+            const num = parseInt(rawId.replace(/\D/g, ''), 10);
+            return (num >= 1 && num <= state.tables.length) ? state.tables[num - 1] : null;
+          })();
+        const resolved = match ? match.label : (rawLabel || rawId);
+        if (resolved) {
+          state.custTableLabel = resolved;
+          state.portal = 'customer';
+        }
+      } catch (_) {}
+    }
 
     function catLabel(code) {
       const found = state.categories.find(c => c.code === code);
@@ -766,9 +794,12 @@
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
             <div>
               <h3>25 Dining Tables &amp; Cabins Manager (${state.tables.length} Tables)</h3>
-              <div class="muted">Charcoal Main Hall (15), Family Cabins (5), Outdoor Grill Lawn (5).</div>
+              <div class="muted">Charcoal Main Hall (15), Family Cabins (5), Outdoor Grill Lawn (5) · Each table has a unique direct-order QR link.</div>
             </div>
-            <button class="btn-primary" onclick="reset25Tables()">Reset / Load All 25 Tables</button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn-green" onclick="openAllTableQrsModal()">📱 25 Table QR Links &amp; Print</button>
+              <button class="btn-primary" onclick="reset25Tables()">Reset / Load All 25 Tables</button>
+            </div>
           </div>
           <div class="chip-row">
             ${state.tables.map(t => `
@@ -814,14 +845,34 @@
       });
       const lines = resolveLines(state.custCart);
       const total = lines.reduce((s, l) => s + l.lineTotal, 0);
+      const isTableMode = Boolean(state.custTableLabel);
 
       return `
         <div class="pos-grid">
           <div class="card">
+            <div style="margin-bottom:12px;padding:12px 14px;border-radius:12px;border:1px solid ${isTableMode ? 'var(--green)' : 'rgba(230,148,69,0.55)'};background:${isTableMode ? 'rgba(76,175,121,0.12)' : 'rgba(230,148,69,0.08)'};display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+              <div>
+                <strong style="color:${isTableMode ? 'var(--green)' : 'var(--amber)'};">
+                  ${isTableMode ? `🍽️ Seated at ${escapeHtml(state.custTableLabel)} · Direct Table QR Ordering` : '📱 Dining at Oak & Smoke? Order Directly from Your Table'}
+                </strong>
+                <div class="muted" style="font-size:12px;">
+                  ${isTableMode ? 'Orders fire straight to the Kitchen for your table — no delivery address required.' : 'Scan your table QR card or pick Table 1–25 to send orders straight to Kitchen.'}
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <select style="width:auto;min-width:170px;" onchange="setCustomerTable(this.value)">
+                  <option value="">COD Delivery (No Table)</option>
+                  ${state.tables.filter(t => t.available).map(t => `
+                    <option value="${escapeHtml(t.label)}" ${state.custTableLabel === t.label ? 'selected' : ''}>${escapeHtml(t.label)} (${t.capacity}p)</option>
+                  `).join('')}
+                </select>
+                ${isTableMode ? `<button class="btn-sm btn-danger" onclick="setCustomerTable('')">Switch to Delivery</button>` : ''}
+              </div>
+            </div>
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
               <div>
                 <h2>Oak &amp; Smoke Digital Menu (Hasilpur)</h2>
-                <div class="muted">Authentic Pakistani Karahi, Smoked BBQ &amp; Platters · Choose from 4 varieties per dish · Cash on Delivery</div>
+                <div class="muted">Authentic Pakistani Karahi, Smoked BBQ &amp; Platters · Choose from 4 varieties per dish · ${isTableMode ? 'Direct Table Dine-In' : 'Cash on Delivery'}</div>
               </div>
               <input style="max-width:260px;" placeholder="Search menu..." value="${escapeHtml(state.custSearch)}" oninput="state.custSearch=this.value;render()" />
             </div>
@@ -857,7 +908,7 @@
                       <span class="muted" style="font-size:12px;">${escapeHtml(activeV.label)}</span>
                       <div class="qty-controls">
                         ${qty > 0 ? `<button class="btn-sm" onclick="updateCart('custCart','${escapeHtml(k)}',-1)">−</button><strong>${qty}</strong>` : ''}
-                        <button class="btn-sm btn-primary" onclick="updateCart('custCart','${escapeHtml(k)}',1)">+ Add to COD Cart</button>
+                        <button class="btn-sm btn-primary" onclick="updateCart('custCart','${escapeHtml(k)}',1)">${isTableMode ? '+ Add to Table' : '+ Add to COD Cart'}</button>
                       </div>
                     </div>
                   </div>`;
@@ -865,10 +916,15 @@
             </div>
           </div>
 
-          <div class="card ticket-panel">
-            <h2 style="color:var(--amber);">Customer COD Cart</h2>
+          <div class="card ticket-panel" style="${isTableMode ? 'border-color:var(--green);' : ''}">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+              <h2 style="color:${isTableMode ? 'var(--green)' : 'var(--amber)'};margin:0;">
+                ${isTableMode ? `🍽️ ${escapeHtml(state.custTableLabel)} Order` : 'Customer COD Cart'}
+              </h2>
+              <span class="pill ${isTableMode ? 'online' : 'amber'}">${isTableMode ? 'TABLE QR' : 'COD'}</span>
+            </div>
             <div class="ticket-items">
-              ${lines.length === 0 ? `<div class="muted">Your COD cart is empty. Pick a dish variety to add items.</div>` : lines.map(l => `
+              ${lines.length === 0 ? `<div class="muted">${isTableMode ? `Your ${escapeHtml(state.custTableLabel)} tray is empty. Pick a dish variety to add items.` : 'Your COD cart is empty. Pick a dish variety to add items.'}</div>` : lines.map(l => `
                 <div class="ticket-line">
                   <div>
                     <strong>${escapeHtml(l.name)}</strong>
@@ -883,15 +939,19 @@
               `).join('')}
             </div>
             <div style="border-top:1px solid var(--border);padding-top:10px;display:flex;justify-content:space-between;">
-              <strong>COD Payable</strong>
-              <span class="price" style="font-size:20px;">${fmtPkr(total)}</span>
+              <strong>${isTableMode ? 'Pay at Counter / Table' : 'COD Payable'}</strong>
+              <span class="price" style="font-size:20px;${isTableMode ? 'color:var(--green);' : ''}">${fmtPkr(total)}</span>
             </div>
             <div class="input-grid" style="grid-template-columns:1fr;">
-              <input id="cust-name" placeholder="Your Full Name" />
-              <input id="cust-phone" placeholder="Mobile Number (e.g. 0300-1234567)" />
-              <input id="cust-addr" placeholder="Hasilpur Delivery Address" />
+              <input id="cust-name" placeholder="Your Full Name ${isTableMode ? '(optional)' : ''}" />
+              <input id="cust-phone" placeholder="Mobile Number ${isTableMode ? '(optional)' : '(e.g. 0300-1234567)'}" />
+              ${isTableMode
+                ? `<input id="cust-notes" placeholder="Kitchen Notes (spice level, serve order)" />`
+                : `<input id="cust-addr" placeholder="Hasilpur Delivery Address" />`}
             </div>
-            <button class="btn-primary" ${lines.length===0?'disabled':''} onclick="submitCustomerCodOrder()">Place Cash on Delivery Order</button>
+            <button class="${isTableMode ? 'btn-green' : 'btn-primary'}" ${lines.length===0?'disabled':''} onclick="submitCustomerCodOrder()">
+              ${isTableMode ? `🔥 Send Direct to Kitchen (${escapeHtml(state.custTableLabel)})` : 'Place Cash on Delivery Order'}
+            </button>
 
             ${state.orders.length > 0 ? `
               <div style="border-top:1px solid var(--border);padding-top:12px;display:flex;flex-direction:column;gap:8px;">
@@ -983,11 +1043,46 @@
       openPostOrderModal(order);
     };
 
+    window.setCustomerTable = (label) => {
+      state.custTableLabel = (label || '').trim();
+      if (state.custTableLabel) {
+        showToast(`Seated at ${state.custTableLabel} — direct table ordering active!`);
+      } else {
+        showToast('Switched to COD Delivery mode.');
+      }
+      render();
+    };
+
     window.submitCustomerCodOrder = () => {
       const lines = resolveLines(state.custCart);
       if (!lines.length) return;
       const name = (document.getElementById('cust-name')?.value || '').trim();
       const phone = (document.getElementById('cust-phone')?.value || '').trim();
+      const isTableMode = Boolean(state.custTableLabel);
+      if (isTableMode) {
+        const notes = (document.getElementById('cust-notes')?.value || '').trim();
+        const order = {
+          id: 'ord_' + Date.now(),
+          orderNumber: 'OS-' + String(Math.floor(1000 + Math.random() * 9000)),
+          orderType: 'DINE_IN',
+          tableLabel: state.custTableLabel,
+          customerName: name || state.custTableLabel,
+          customerPhone: phone,
+          deliveryAddress: '',
+          notes: notes || `Table QR Self-Order (${state.custTableLabel})`,
+          lines,
+          totalPkr: lines.reduce((s, l) => s + l.lineTotal, 0),
+          status: 'PLACED',
+          pendingSync: !navigator.onLine,
+          createdAt: Date.now()
+        };
+        state.orders.unshift(order);
+        state.custCart = {};
+        saveAll();
+        showToast(`Table Order ${order.orderNumber} for ${state.custTableLabel} sent straight to Kitchen!`);
+        render();
+        return;
+      }
       const addr = (document.getElementById('cust-addr')?.value || '').trim();
       if (phone.length < 7 || addr.length < 4) {
         showToast('Please enter your phone number and Hasilpur delivery address.');
@@ -1126,6 +1221,53 @@
         <div style="margin-top:14px;text-align:right;">
           <button onclick="closeModal()">Close</button>
         </div>
+      `);
+    };
+
+    window.openAllTableQrsModal = () => {
+      const rows = state.tables.map(t => {
+        const url = buildTableOrderUrl(t);
+        const zoneName = ZONES[t.zone] || t.zone;
+        return `
+          <div class="ticket-line" style="flex-direction:column;align-items:stretch;gap:6px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+              <div>
+                <strong style="color:var(--amber);">${escapeHtml(t.label)}</strong>
+                <span class="muted"> · ${escapeHtml(zoneName)} (${t.capacity}p)</span>
+              </div>
+              <div style="display:flex;gap:6px;">
+                <button class="btn-sm" onclick="navigator.clipboard?.writeText('${escapeHtml(url)}').then(()=>showToast('Copied ${escapeHtml(t.label)} QR link!'))">📋 Copy</button>
+                <button class="btn-sm btn-green" onclick="closeModal();state.portal='customer';setCustomerTable('${escapeHtml(t.label)}')">Open Menu</button>
+              </div>
+            </div>
+            <div style="font-family:monospace;font-size:11px;color:var(--muted);word-break:break-all;">${escapeHtml(url)}</div>
+          </div>`;
+      }).join('');
+      openModal(`
+        <h2 style="margin-top:0;color:var(--amber);">25 Unique Table QR Ordering Links</h2>
+        <p class="muted">Each table has its own direct-order link. Print scannable QR table tents from the Oak &amp; Smoke Android app (Owner &rarr; Tables &rarr; All QRs) or print this link sheet below.</p>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <button class="btn-primary" style="flex:1;" onclick="printTableLinksSheet()">🖨 Print All ${state.tables.length} Table Cards</button>
+          <button onclick="closeModal()">Close</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;max-height:55vh;overflow-y:auto;">
+          ${rows}
+        </div>
+      `);
+    };
+
+    window.printTableLinksSheet = () => {
+      const cards = state.tables.map(t => `
+        <div style="border:1px solid #000;padding:10px;margin-bottom:10px;page-break-inside:avoid;">
+          <div style="font-weight:bold;font-size:14px;">OAK &amp; SMOKE HASILPUR</div>
+          <div style="font-size:18px;font-weight:bold;margin:4px 0;">${escapeHtml(t.label)} (${t.capacity} Guests)</div>
+          <div style="font-size:11px;">${escapeHtml(ZONES[t.zone] || t.zone)}</div>
+          <div style="font-size:10px;word-break:break-all;margin-top:6px;">${escapeHtml(buildTableOrderUrl(t))}</div>
+        </div>
+      `).join('');
+      printDocument(`
+        <h2 style="text-align:center;margin:0 0 10px;">OAK &amp; SMOKE — 25 TABLE ORDERING LINKS</h2>
+        ${cards}
       `);
     };
 
@@ -1282,7 +1424,11 @@
       navigator.serviceWorker.register('./sw.js').catch(() => {});
     }
 
+    applyTableFromUrl();
     render();
+    if (state.custTableLabel) {
+      showToast(`Checked into ${state.custTableLabel} — ready to order directly to Kitchen!`);
+    }
   </script>
 </body>
 </html>

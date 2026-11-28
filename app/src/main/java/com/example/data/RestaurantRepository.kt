@@ -469,6 +469,104 @@ class RestaurantRepository(private val db: FirebaseFirestore) {
         }
     }
 
+    suspend fun placeCustomerTableOrder(
+        tableLabel: String,
+        customerName: String,
+        customerPhone: String,
+        cartLines: List<CartLine>,
+        redeemPoints: Long,
+        currentLoyaltyPoints: Long,
+        pointValuePkr: Long,
+        notes: String
+    ): Result<String> {
+        var path = "orders"
+        return try {
+            val uid = requireUserId()
+            val cleanTable = tableLabel.trim().take(40)
+            require(cleanTable.length >= 2) { "Please scan or select a valid dining table." }
+            require(cartLines.isNotEmpty()) { "Your cart is empty." }
+
+            val subtotal = cartLines.sumOf { it.unitPricePkr * it.quantity }
+            val safeRedeem = redeemPoints.coerceIn(0L, currentLoyaltyPoints)
+            val discount = (safeRedeem * pointValuePkr).coerceAtMost(subtotal)
+            val total = (subtotal - discount).coerceAtLeast(0L)
+            val itemCount = cartLines.sumOf { it.quantity }.toLong().coerceIn(1L, 100L)
+            val summary = cartLines.joinToString(", ") { "${it.quantity}x ${it.displayNameWithVariety()}" }.take(1000)
+            val orderNum = "OS-${Random.nextInt(1000, 9999)}"
+
+            val orderRef = db.collection("orders").document()
+            path = orderRef.path
+            val batch = db.batch()
+            batch.set(
+                orderRef,
+                mapOf(
+                    "orderNumber" to orderNum,
+                    "userId" to uid,
+                    "orderType" to OrderType.DINE_IN.name,
+                    "tableLabel" to cleanTable,
+                    "customerName" to customerName.trim().ifBlank { "$cleanTable Guest" }.take(80),
+                    "customerPhone" to customerPhone.trim().take(30),
+                    "deliveryAddress" to "Dine-In · $cleanTable",
+                    "customerLat" to 0.0,
+                    "customerLng" to 0.0,
+                    "locationLabel" to cleanTable,
+                    "hasLocation" to false,
+                    "assignedRiderId" to "",
+                    "assignedRiderName" to "",
+                    "assignedRiderPhone" to "",
+                    "itemsSummary" to summary,
+                    "itemsDetail" to encodeOrderLines(cartLines),
+                    "itemCount" to itemCount,
+                    "subtotalPkr" to subtotal,
+                    "loyaltyPointsRedeemed" to safeRedeem,
+                    "discountPkr" to discount,
+                    "totalPkr" to total,
+                    "paymentMethod" to "CASH_COUNTER",
+                    "status" to OrderStatus.PLACED.name,
+                    "handledByStaffId" to "",
+                    "notes" to notes.trim().take(300),
+                    "dateKey" to todayDateKey(),
+                    "monthKey" to currentMonthKey(),
+                    "createdAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            )
+
+            if (safeRedeem > 0L) {
+                batch.update(
+                    db.collection("users").document(uid),
+                    mapOf(
+                        "loyaltyPoints" to (currentLoyaltyPoints - safeRedeem).coerceAtLeast(0L),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+            }
+
+            // Notify Kitchen / Staff of new Table QR Dine-In order
+            val staffAlertRef = db.collection("notifications").document()
+            batch.set(
+                staffAlertRef,
+                mapOf(
+                    "targetUid" to "ROLE_STAFF",
+                    "audience" to "STAFF",
+                    "title" to "Table QR Order $orderNum · $cleanTable",
+                    "message" to "${customerName.trim().ifBlank { "Table Guest" }} ordered $itemCount item(s) directly from $cleanTable (${formatPkr(total)}).",
+                    "type" to "ORDER",
+                    "read" to false,
+                    "createdByUid" to uid,
+                    "createdAt" to FieldValue.serverTimestamp()
+                )
+            )
+            batch.commit().await()
+            Result.success(orderNum)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, path)
+            Result.failure(e)
+        }
+    }
+
     suspend fun cancelOwnOrder(orderId: String): Result<Unit> {
         val path = "orders/$orderId"
         return try {

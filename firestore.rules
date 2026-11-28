@@ -501,6 +501,10 @@ service cloud.firestore {
             incoming().deliveryAddress.size() >= 4 &&
             'hasLocation' in incoming() && incoming().hasLocation == true &&
             'customerLat' in incoming() && 'customerLng' in incoming()) ||
+          (incoming().status == 'PLACED' &&
+            'orderType' in incoming() && incoming().orderType == 'DINE_IN' &&
+            'tableLabel' in incoming() && incoming().tableLabel.size() >= 2 &&
+            incoming().paymentMethod == 'CASH_COUNTER') ||
           (isStaffOrAbove() &&
             incoming().status in ['PLACED', 'CONFIRMED', 'GRILLING'] &&
             incoming().paymentMethod in ['COD', 'CASH_COUNTER'])

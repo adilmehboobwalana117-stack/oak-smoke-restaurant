@@ -51,12 +51,33 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:exported="true"
             android:label="@string/app_name"
+            android:launchMode="singleTop"
             android:resizeableActivity="true"
             android:theme="@style/Theme.MyApplication">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Deep link for Table QR codes (custom scheme) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:host="table"
+                    android:scheme="oaksmoke" />
+            </intent-filter>
+
+            <!-- Deep link for Table QR codes (HTTPS Web App URLs) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:host="ais-pre-rhal5qnhshjimdwqb2v4io-756142993760.asia-southeast1.run.app"
+                    android:scheme="https" />
             </intent-filter>
         </activity>
 

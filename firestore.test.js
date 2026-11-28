@@ -446,6 +446,64 @@ test("COD Orders enforce customer isolation, Staff status updates, and terminal 
     })
   );
 
+  // Customer CAN place a QR Table Dine-In order directly from their table (no GPS required)
+  await assertSucceeds(
+    custDb.collection("orders").doc("order_qr_table_7").set({
+      orderNumber: "OS-2007",
+      userId: CUSTOMER_UID,
+      customerName: "Hamza Khan",
+      customerPhone: "",
+      deliveryAddress: "Dine-In · Table 7",
+      orderType: "DINE_IN",
+      tableLabel: "Table 7",
+      hasLocation: false,
+      itemsSummary: "1x Oak Smoked Mutton Karahi (Half)",
+      itemsDetail: "1||Oak Smoked Mutton Karahi (Half)||2850||2850",
+      itemCount: 1,
+      subtotalPkr: 2850,
+      loyaltyPointsRedeemed: 0,
+      discountPkr: 0,
+      totalPkr: 2850,
+      paymentMethod: "CASH_COUNTER",
+      status: "PLACED",
+      handledByStaffId: "",
+      notes: "Serve hot on charcoal",
+      dateKey: "2026-11-23",
+      monthKey: "2026-11",
+      createdAt: ts(-600),
+      updatedAt: ts(-600),
+    })
+  );
+
+  // Customer CANNOT place a DINE_IN order with an empty tableLabel
+  await assertFails(
+    custDb.collection("orders").doc("order_qr_no_table").set({
+      orderNumber: "OS-2008",
+      userId: CUSTOMER_UID,
+      customerName: "Hamza Khan",
+      customerPhone: "",
+      deliveryAddress: "Dine-In",
+      orderType: "DINE_IN",
+      tableLabel: "",
+      hasLocation: false,
+      itemsSummary: "1x Tikka",
+      itemsDetail: "1||Tikka||620||620",
+      itemCount: 1,
+      subtotalPkr: 620,
+      loyaltyPointsRedeemed: 0,
+      discountPkr: 0,
+      totalPkr: 620,
+      paymentMethod: "CASH_COUNTER",
+      status: "PLACED",
+      handledByStaffId: "",
+      notes: "",
+      dateKey: "2026-11-23",
+      monthKey: "2026-11",
+      createdAt: ts(-550),
+      updatedAt: ts(-550),
+    })
+  );
+
   // Customer cannot bypass PLACED status or send direct to GRILLING
   await assertFails(
     custDb.collection("orders").doc("order_hack_202").set({
