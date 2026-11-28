@@ -84,6 +84,7 @@ import com.example.data.resolveCategoryDisplayLabel
 import com.example.services.FinancialReportService
 import com.example.services.OrderPrintService
 import com.example.services.ReportPeriod
+import com.example.ui.components.AdminAlarmControlStrip
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.KpiMetricCard
 import com.example.ui.components.MonthlyTrendChartCard
@@ -100,10 +101,28 @@ import com.example.viewmodel.RestaurantViewModel
 
 @Composable
 fun OwnerDashboardScreen(viewModel: RestaurantViewModel) {
+    val alarmEnabled by viewModel.orderAlarmEnabled.collectAsStateWithLifecycle()
+    val isAlarmRinging by viewModel.isOrderAlarmRinging.collectAsStateWithLifecycle()
+    val isTestAlarmActive by viewModel.isTestAlarmActive.collectAsStateWithLifecycle()
+    val alarmRemainingSeconds by viewModel.alarmRemainingSeconds.collectAsStateWithLifecycle()
+    val pendingIncomingOrders by viewModel.pendingIncomingOrders.collectAsStateWithLifecycle()
+
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("KPIs & Reports", "Riders", "Tables", "Menu & Rates", "Staff & Salaries", "Loyalty & Stock")
 
     Column(modifier = Modifier.fillMaxSize()) {
+        AdminAlarmControlStrip(
+            alarmEnabled = alarmEnabled,
+            isRinging = isAlarmRinging,
+            isTestAlarmActive = isTestAlarmActive,
+            remainingSeconds = alarmRemainingSeconds,
+            pendingCount = pendingIncomingOrders.size,
+            onToggleEnabled = { viewModel.setOrderAlarmEnabled(it) },
+            onToggleTestAlarm = {
+                if (isTestAlarmActive) viewModel.stopTestOrderAlarm()
+                else viewModel.startTestOrderAlarm()
+            }
+        )
         ScrollableTabRow(
             selectedTabIndex = selectedTab,
             containerColor = MaterialTheme.colorScheme.surface,

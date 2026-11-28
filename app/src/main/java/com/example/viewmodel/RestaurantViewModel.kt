@@ -35,12 +35,15 @@ import com.example.data.parsedVarieties
 import com.example.data.resolveCartLines
 import com.example.services.FinancialReportService
 import com.example.services.FinancialReportSnapshot
+import com.example.services.IncomingOrderAlarmController
 import com.example.services.MonthlyTrendPoint
 import com.example.services.NetworkConnectivityObserver
 import com.example.services.ReportPeriod
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -82,6 +85,7 @@ class RestaurantViewModel(
         const val TAG = "RestaurantVM"
         const val STOP_TIMEOUT_MS = 5000L
         const val BOOTSTRAP_ADMIN_EMAIL = "adilmehboobwalana117@gmail.com"
+        const val ORDER_ALARM_DURATION_SEC = IncomingOrderAlarmController.DEFAULT_ALARM_DURATION_SECONDS
     }
 
     private fun <T> Flow<T>.toSafeStateFlow(initial: T, label: String): StateFlow<T> =
@@ -200,6 +204,54 @@ class RestaurantViewModel(
         }
         .toSafeStateFlow(emptyList(), "allOrders")
 
+    // 3-Minute Continuous Incoming Order Sound Alarm state (Owner, Manager & Staff)
+    val pendingIncomingOrders: StateFlow<List<OrderRecord>> =
+        combine(effectiveRole, allOrders) { role, orders ->
+            val isAdminOrStaff = role == UserRoleTier.OWNER ||
+                role == UserRoleTier.MANAGER ||
+                role == UserRoleTier.STAFF
+            if (!isAdminOrStaff) {
+                emptyList()
+            } else {
+                orders
+                    .filter { it.status == OrderStatus.PLACED.name }
+                    .sortedByDescending { it.createdAt?.seconds ?: Long.MAX_VALUE }
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
+
+    private val _orderAlarmEnabled = MutableStateFlow(true)
+    val orderAlarmEnabled: StateFlow<Boolean> = _orderAlarmEnabled.asStateFlow()
+
+    private val _alarmRemainingSeconds = MutableStateFlow(0)
+    val alarmRemainingSeconds: StateFlow<Int> = _alarmRemainingSeconds.asStateFlow()
+
+    private val _isTestAlarmActive = MutableStateFlow(false)
+    val isTestAlarmActive: StateFlow<Boolean> = _isTestAlarmActive.asStateFlow()
+
+    private val _silencedOrderIds = MutableStateFlow<Set<String>>(emptySet())
+
+    private val hasUnsilencedPendingOrders: StateFlow<Boolean> =
+        combine(pendingIncomingOrders, _silencedOrderIds) { pending, silenced ->
+            pending.any { it.id !in silenced }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), false)
+
+    private val alarmEligibility: StateFlow<Pair<Boolean, Boolean>> =
+        combine(effectiveRole, orderAlarmEnabled, isTestAlarmActive) { role, enabled, testActive ->
+            val isAdminOrStaff = role == UserRoleTier.OWNER ||
+                role == UserRoleTier.MANAGER ||
+                role == UserRoleTier.STAFF
+            (isAdminOrStaff && testActive) to (isAdminOrStaff && enabled)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), false to false)
+
+    val isOrderAlarmRinging: StateFlow<Boolean> =
+        combine(alarmEligibility, alarmRemainingSeconds, hasUnsilencedPendingOrders) { (testEligible, realEligible), remaining, hasUnsilenced ->
+            remaining > 0 && (testEligible || (realEligible && hasUnsilenced))
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), false)
+
+    private var alarmCountdownJob: Job? = null
+    private var hasSeenFirstIncomingBatch = false
+    private val knownIncomingOrderIds = mutableSetOf<String>()
+
     val pendingSyncOrderIds: StateFlow<Set<String>> = effectiveRole
         .flatMapLatest { role ->
             if (role != UserRoleTier.CUSTOMER) repo.observePendingSyncOrderIds(currentUserId)
@@ -314,6 +366,118 @@ class RestaurantViewModel(
         viewModelScope.launch {
             repo.ensureUserProfileExists(userDisplayName, userEmail)
         }
+        viewModelScope.launch {
+            pendingIncomingOrders.collect { pending ->
+                val currentIds = pending.map { it.id }.toSet()
+                _silencedOrderIds.value = _silencedOrderIds.value.intersect(currentIds)
+
+                if (pending.isEmpty()) {
+                    if (!_isTestAlarmActive.value) {
+                        stopAlarmCountdownInternal()
+                    }
+                    knownIncomingOrderIds.clear()
+                    hasSeenFirstIncomingBatch = true
+                    return@collect
+                }
+
+                val brandNewOrders = pending.filter { it.id !in knownIncomingOrderIds }
+                knownIncomingOrderIds.addAll(currentIds)
+
+                if (!hasSeenFirstIncomingBatch) {
+                    hasSeenFirstIncomingBatch = true
+                    val nowSec = System.currentTimeMillis() / 1000L
+                    val newestSec = pending.firstOrNull()?.createdAt?.seconds ?: nowSec
+                    val ageSec = (nowSec - newestSec).coerceAtLeast(0L).toInt()
+                    val remaining = (ORDER_ALARM_DURATION_SEC - ageSec).coerceIn(0, ORDER_ALARM_DURATION_SEC)
+                    if (remaining > 0 && _orderAlarmEnabled.value) {
+                        startAlarmCountdown(remaining)
+                    }
+                } else if (brandNewOrders.isNotEmpty() && _orderAlarmEnabled.value) {
+                    _isTestAlarmActive.value = false
+                    startAlarmCountdown(ORDER_ALARM_DURATION_SEC)
+                }
+            }
+        }
+    }
+
+    private fun startAlarmCountdown(seconds: Int) {
+        alarmCountdownJob?.cancel()
+        _alarmRemainingSeconds.value = seconds.coerceIn(0, ORDER_ALARM_DURATION_SEC)
+        alarmCountdownJob = viewModelScope.launch {
+            while (_alarmRemainingSeconds.value > 0) {
+                delay(1000L)
+                _alarmRemainingSeconds.value = (_alarmRemainingSeconds.value - 1).coerceAtLeast(0)
+            }
+            _isTestAlarmActive.value = false
+        }
+    }
+
+    private fun stopAlarmCountdownInternal() {
+        alarmCountdownJob?.cancel()
+        alarmCountdownJob = null
+        _alarmRemainingSeconds.value = 0
+    }
+
+    fun setOrderAlarmEnabled(enabled: Boolean) {
+        _orderAlarmEnabled.value = enabled
+        if (!enabled) {
+            _isTestAlarmActive.value = false
+            stopAlarmCountdownInternal()
+            _snackbarMessage.value = "3-minute order sound alarm turned OFF."
+        } else {
+            _snackbarMessage.value = "3-minute continuous order alarm armed."
+            val unsilenced = pendingIncomingOrders.value.filter { it.id !in _silencedOrderIds.value }
+            if (unsilenced.isNotEmpty() && _alarmRemainingSeconds.value == 0) {
+                startAlarmCountdown(ORDER_ALARM_DURATION_SEC)
+            }
+        }
+    }
+
+    fun muteCurrentIncomingAlarm() {
+        val currentIds = pendingIncomingOrders.value.map { it.id }.toSet()
+        _silencedOrderIds.value = _silencedOrderIds.value + currentIds
+        _isTestAlarmActive.value = false
+        stopAlarmCountdownInternal()
+        _snackbarMessage.value = "Alarm silenced for current order(s). Armed for next order."
+    }
+
+    fun startTestOrderAlarm() {
+        _isTestAlarmActive.value = true
+        startAlarmCountdown(ORDER_ALARM_DURATION_SEC)
+        _snackbarMessage.value = "Testing 3-minute continuous order alarm — tap Stop anytime."
+    }
+
+    fun stopTestOrderAlarm() {
+        _isTestAlarmActive.value = false
+        val hasRealUnsilenced = pendingIncomingOrders.value.any { it.id !in _silencedOrderIds.value }
+        if (!hasRealUnsilenced || !_orderAlarmEnabled.value) {
+            stopAlarmCountdownInternal()
+        }
+    }
+
+    fun acceptIncomingOrder(order: OrderRecord) {
+        _silencedOrderIds.value = _silencedOrderIds.value + order.id
+        _isTestAlarmActive.value = false
+        val remainingUnsilenced = pendingIncomingOrders.value.any { it.id != order.id && it.id !in _silencedOrderIds.value }
+        if (!remainingUnsilenced) {
+            stopAlarmCountdownInternal()
+        }
+        advanceOrderStatus(order, OrderStatus.GRILLING)
+    }
+
+    fun rejectIncomingOrder(order: OrderRecord) {
+        _silencedOrderIds.value = _silencedOrderIds.value + order.id
+        _isTestAlarmActive.value = false
+        val remainingUnsilenced = pendingIncomingOrders.value.any { it.id != order.id && it.id !in _silencedOrderIds.value }
+        if (!remainingUnsilenced) {
+            stopAlarmCountdownInternal()
+        }
+        advanceOrderStatus(order, OrderStatus.CANCELLED)
+    }
+
+    override fun onCleared() {
+        stopAlarmCountdownInternal()
+        super.onCleared()
     }
 
     fun clearSnackbar() {

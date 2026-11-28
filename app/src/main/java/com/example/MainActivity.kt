@@ -50,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -75,15 +76,20 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.data.AdminFinanceRepository
 import com.example.data.AuthManager
 import com.example.data.FirestoreProvider
+import com.example.data.OrderRecord
 import com.example.data.RestaurantRepository
 import com.example.data.UserRoleTier
 import com.example.services.AppDownloadTarget
 import com.example.services.AppPwaQrService
+import com.example.services.IncomingOrderAlarmController
 import com.example.services.LocalNotificationHelper
 import com.example.services.NetworkConnectivityObserver
 import com.example.services.TableQrService
+import com.example.ui.components.IncomingOrderAlarmBanner
+import com.example.ui.components.IncomingOrdersQueueSheet
 import com.example.ui.components.OfflineStatusBanner
 import com.example.ui.components.PwaDownloadAndQrModal
+import com.example.ui.components.RejectIncomingOrderDialog
 import com.example.ui.components.StatusPill
 import com.example.ui.components.TopBarQrPwaActionButton
 import com.example.ui.components.TopInstalledPwaQrStrip
@@ -252,13 +258,61 @@ private fun OakAndSmokeShell(
     val notifications by viewModel.notifications.collectAsStateWithLifecycle()
     val profile by viewModel.userProfile.collectAsStateWithLifecycle()
     val config by viewModel.config.collectAsStateWithLifecycle()
+    val pendingIncomingOrders by viewModel.pendingIncomingOrders.collectAsStateWithLifecycle()
+    val isOrderAlarmRinging by viewModel.isOrderAlarmRinging.collectAsStateWithLifecycle()
+    val isTestAlarmActive by viewModel.isTestAlarmActive.collectAsStateWithLifecycle()
+    val alarmRemainingSeconds by viewModel.alarmRemainingSeconds.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedDestId by remember { mutableStateOf("menu") }
     var customerHubInitialTab by remember { mutableIntStateOf(0) }
     var showTopPwaQrStrip by remember { mutableStateOf(true) }
     var showPwaQrModal by remember { mutableStateOf(false) }
+    var showIncomingQueueSheet by remember { mutableStateOf(false) }
+    var rejectCandidateOrder by remember { mutableStateOf<OrderRecord?>(null) }
     val seenNotifIds = remember { mutableSetOf<String>() }
+    val notifiedIncomingOrderIds = remember { mutableSetOf<String>() }
+    var initializedIncomingNotifSet by remember { mutableStateOf(false) }
+
+    val isAdminOrStaff = effectiveRole == UserRoleTier.OWNER ||
+        effectiveRole == UserRoleTier.MANAGER ||
+        effectiveRole == UserRoleTier.STAFF
+
+    // Drive continuous 3-minute ringing alarm audio for Owner, Manager & Staff
+    LaunchedEffect(isOrderAlarmRinging, isAdminOrStaff) {
+        if (isOrderAlarmRinging && isAdminOrStaff) {
+            IncomingOrderAlarmController.startContinuousAlarm(context)
+        } else {
+            IncomingOrderAlarmController.stopAlarm()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            IncomingOrderAlarmController.stopAlarm()
+        }
+    }
+
+    // Post high-priority Android notification shade alert when a fresh PLACED order arrives
+    LaunchedEffect(pendingIncomingOrders, isAdminOrStaff) {
+        if (!isAdminOrStaff) return@LaunchedEffect
+        if (!initializedIncomingNotifSet) {
+            pendingIncomingOrders.forEach { notifiedIncomingOrderIds.add(it.id) }
+            initializedIncomingNotifSet = true
+        } else {
+            pendingIncomingOrders.filter { it.id !in notifiedIncomingOrderIds }.forEach { freshOrder ->
+                notifiedIncomingOrderIds.add(freshOrder.id)
+                val originLabel = if (freshOrder.tableLabel.isNotBlank()) freshOrder.tableLabel else "COD Delivery"
+                LocalNotificationHelper.showNotification(
+                    context = context,
+                    id = freshOrder.id.hashCode(),
+                    title = "NEW ORDER ${freshOrder.orderNumber} ($originLabel)",
+                    message = "Tap Accept or Reject in Oak & Smoke Admin/Staff panel. Alarm rings for 3 min until handled.",
+                    withSoundAlert = false
+                )
+            }
+        }
+    }
 
     val configPublicUrl = config?.publicDownloadUrl.orEmpty()
     LaunchedEffect(config?.publicDownloadUrl) {
@@ -483,6 +537,20 @@ private fun OakAndSmokeShell(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     OfflineStatusBanner(isOnline = isOnline)
+                    if (isAdminOrStaff) {
+                        IncomingOrderAlarmBanner(
+                            pendingOrders = pendingIncomingOrders,
+                            isRinging = isOrderAlarmRinging,
+                            isTestAlarmActive = isTestAlarmActive,
+                            remainingSeconds = alarmRemainingSeconds,
+                            onAcceptOrder = { order -> viewModel.acceptIncomingOrder(order) },
+                            onRequestRejectOrder = { order -> rejectCandidateOrder = order },
+                            onMuteAlarm = { viewModel.muteCurrentIncomingAlarm() },
+                            onStopTestAlarm = { viewModel.stopTestOrderAlarm() },
+                            onOpenQueueSheet = { showIncomingQueueSheet = true },
+                            modifier = Modifier.widthIn(max = maxContentWidth)
+                        )
+                    }
                     TopInstalledPwaQrStrip(
                         visible = showTopPwaQrStrip,
                         qrUrl = activePublicQrUrl,
@@ -535,6 +603,33 @@ private fun OakAndSmokeShell(
             canEditDownloadUrl = effectiveRole == UserRoleTier.OWNER || effectiveRole == UserRoleTier.MANAGER,
             onSaveCustomDownloadUrl = { updatedUrl ->
                 viewModel.updatePublicDownloadUrl(updatedUrl)
+            }
+        )
+    }
+
+    if (showIncomingQueueSheet && isAdminOrStaff) {
+        IncomingOrdersQueueSheet(
+            pendingOrders = pendingIncomingOrders,
+            isRinging = isOrderAlarmRinging,
+            remainingSeconds = alarmRemainingSeconds,
+            onDismiss = { showIncomingQueueSheet = false },
+            onAcceptOrder = { order ->
+                viewModel.acceptIncomingOrder(order)
+                if (pendingIncomingOrders.size <= 1) showIncomingQueueSheet = false
+            },
+            onRequestRejectOrder = { order -> rejectCandidateOrder = order },
+            onMuteAlarm = { viewModel.muteCurrentIncomingAlarm() }
+        )
+    }
+
+    rejectCandidateOrder?.let { targetOrder ->
+        RejectIncomingOrderDialog(
+            order = targetOrder,
+            onDismiss = { rejectCandidateOrder = null },
+            onConfirmReject = {
+                viewModel.rejectIncomingOrder(targetOrder)
+                rejectCandidateOrder = null
+                if (pendingIncomingOrders.size <= 1) showIncomingQueueSheet = false
             }
         )
     }

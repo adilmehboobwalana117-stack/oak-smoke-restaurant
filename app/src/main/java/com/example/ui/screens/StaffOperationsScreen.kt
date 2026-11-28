@@ -69,6 +69,7 @@ import com.example.data.formatPkr
 import com.example.data.formatTimestampShort
 import com.example.services.LocationHelper
 import com.example.services.OrderPrintService
+import com.example.ui.components.AdminAlarmControlStrip
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.SmokedCard
@@ -83,6 +84,12 @@ import com.example.viewmodel.RestaurantViewModel
 
 @Composable
 fun StaffOperationsScreen(viewModel: RestaurantViewModel) {
+    val alarmEnabled by viewModel.orderAlarmEnabled.collectAsStateWithLifecycle()
+    val isAlarmRinging by viewModel.isOrderAlarmRinging.collectAsStateWithLifecycle()
+    val isTestAlarmActive by viewModel.isTestAlarmActive.collectAsStateWithLifecycle()
+    val alarmRemainingSeconds by viewModel.alarmRemainingSeconds.collectAsStateWithLifecycle()
+    val pendingIncomingOrders by viewModel.pendingIncomingOrders.collectAsStateWithLifecycle()
+
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf(
         "Take Order",
@@ -94,6 +101,18 @@ fun StaffOperationsScreen(viewModel: RestaurantViewModel) {
     )
 
     Column(modifier = Modifier.fillMaxSize()) {
+        AdminAlarmControlStrip(
+            alarmEnabled = alarmEnabled,
+            isRinging = isAlarmRinging,
+            isTestAlarmActive = isTestAlarmActive,
+            remainingSeconds = alarmRemainingSeconds,
+            pendingCount = pendingIncomingOrders.size,
+            onToggleEnabled = { viewModel.setOrderAlarmEnabled(it) },
+            onToggleTestAlarm = {
+                if (isTestAlarmActive) viewModel.stopTestOrderAlarm()
+                else viewModel.startTestOrderAlarm()
+            }
+        )
         ScrollableTabRow(
             selectedTabIndex = selectedTab,
             containerColor = MaterialTheme.colorScheme.surface,
