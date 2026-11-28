@@ -76,6 +76,7 @@ import com.example.data.AuthManager
 import com.example.data.FirestoreProvider
 import com.example.data.RestaurantRepository
 import com.example.data.UserRoleTier
+import com.example.services.AppDownloadTarget
 import com.example.services.AppPwaQrService
 import com.example.services.LocalNotificationHelper
 import com.example.services.NetworkConnectivityObserver
@@ -214,6 +215,7 @@ private fun OakAndSmokeShell(
     val unreadCount by viewModel.unreadNotificationCount.collectAsStateWithLifecycle()
     val notifications by viewModel.notifications.collectAsStateWithLifecycle()
     val profile by viewModel.userProfile.collectAsStateWithLifecycle()
+    val config by viewModel.config.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedDestId by remember { mutableStateOf("menu") }
@@ -221,6 +223,16 @@ private fun OakAndSmokeShell(
     var showTopPwaQrStrip by remember { mutableStateOf(true) }
     var showPwaQrModal by remember { mutableStateOf(false) }
     val seenNotifIds = remember { mutableSetOf<String>() }
+
+    val configPublicUrl = config?.publicDownloadUrl.orEmpty()
+    LaunchedEffect(config?.publicDownloadUrl) {
+        config?.let { cfg ->
+            AppPwaQrService.cachePublicDownloadUrl(context, cfg.publicDownloadUrl)
+        }
+    }
+    val activePublicQrUrl = remember(configPublicUrl, context) {
+        AppPwaQrService.resolveTargetUrl(context, AppDownloadTarget.PUBLIC_DOWNLOAD, configPublicUrl)
+    }
 
     // Carry over any dishes the customer added while browsing in Guest Customer mode
     LaunchedEffect(initialGuestCart) {
@@ -426,18 +438,9 @@ private fun OakAndSmokeShell(
                     OfflineStatusBanner(isOnline = isOnline)
                     TopInstalledPwaQrStrip(
                         visible = showTopPwaQrStrip,
+                        qrUrl = activePublicQrUrl,
                         onOpenQrModal = { showPwaQrModal = true },
-                        onDownloadPwa = {
-                            AppPwaQrService.openPwaDownload(context)
-                                .onSuccess {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar("Opening Oak & Smoke Web PWA. Tap 'Install App' in your browser.")
-                                    }
-                                }
-                                .onFailure {
-                                    showPwaQrModal = true
-                                }
-                        },
+                        onDownloadPwa = { showPwaQrModal = true },
                         onDismiss = { showTopPwaQrStrip = false },
                         modifier = Modifier.widthIn(max = maxContentWidth)
                     )
@@ -480,6 +483,11 @@ private fun OakAndSmokeShell(
             onDismiss = { showPwaQrModal = false },
             onFeedback = { msg ->
                 scope.launch { snackbarHostState.showSnackbar(msg) }
+            },
+            configPublicDownloadUrl = configPublicUrl,
+            canEditDownloadUrl = effectiveRole == UserRoleTier.OWNER || effectiveRole == UserRoleTier.MANAGER,
+            onSaveCustomDownloadUrl = { updatedUrl ->
+                viewModel.updatePublicDownloadUrl(updatedUrl)
             }
         )
     }

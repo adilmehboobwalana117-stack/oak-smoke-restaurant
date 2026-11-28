@@ -158,9 +158,53 @@ data class RestaurantConfig(
     val autoPrintDailyReport: Boolean = false,
     val loyaltyEarnPer100Pkr: Long = 1L,
     val loyaltyPointValuePkr: Long = 5L,
+    val publicDownloadUrl: String = "",
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )
+
+@Keep
+@IgnoreExtraProperties
+data class MenuCategoryRecord(
+    @DocumentId val id: String = "",
+    val catalogType: String = "CATEGORY",
+    val code: String = "KARAHI",
+    val displayLabel: String = "Karahi",
+    val displayOrder: Long = 1L,
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+fun normalizeCategoryCode(rawLabel: String): String {
+    val cleaned = rawLabel.trim()
+        .uppercase(Locale.US)
+        .replace(Regex("[^A-Z0-9]+"), "_")
+        .trim('_')
+        .take(40)
+    return if (cleaned.length >= 2) cleaned else ""
+}
+
+fun defaultMenuCategories(): List<MenuCategoryRecord> =
+    MenuCategory.entries.mapIndexed { idx, cat ->
+        MenuCategoryRecord(
+            id = "cat_${cat.name.lowercase(Locale.US)}",
+            catalogType = "CATEGORY",
+            code = cat.name,
+            displayLabel = cat.displayLabel,
+            displayOrder = (idx + 1).toLong()
+        )
+    }
+
+fun resolveCategoryDisplayLabel(code: String, categories: List<MenuCategoryRecord>): String {
+    categories.firstOrNull { it.code.equals(code, ignoreCase = true) }?.let { return it.displayLabel }
+    MenuCategory.entries.firstOrNull { it.name.equals(code, ignoreCase = true) }?.let { return it.displayLabel }
+    return code.replace('_', ' ')
+        .lowercase(Locale.US)
+        .split(' ')
+        .filter { it.isNotBlank() }
+        .joinToString(" ") { word -> word.replaceFirstChar { it.uppercaseChar() } }
+        .ifBlank { "Special" }
+}
 
 @Keep
 @IgnoreExtraProperties

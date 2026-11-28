@@ -197,6 +197,19 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
             )
 
             if (seedStarterCatalog) {
+                defaultMenuCategories().forEach { cat ->
+                    batch.set(
+                        db.collection("menuCategories").document(cat.id),
+                        mapOf(
+                            "catalogType" to "CATEGORY",
+                            "code" to cat.code,
+                            "displayLabel" to cat.displayLabel,
+                            "displayOrder" to cat.displayOrder,
+                            "createdAt" to FieldValue.serverTimestamp(),
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    )
+                }
                 OakAndSmokeSeeds.starterMenu.forEach { dish ->
                     batch.set(
                         db.collection("menuItems").document(dish.id),
@@ -650,7 +663,7 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
     suspend fun saveMenuItem(
         existingId: String?,
         name: String,
-        category: MenuCategory,
+        categoryCode: String,
         description: String,
         pricePkr: Long,
         varieties: List<DishVariety> = emptyList(),
@@ -665,6 +678,7 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
         return try {
             val uid = requireUserId()
             require(name.trim().length in 2..80) { "Dish name must be 2-80 characters." }
+            val normalizedCategory = normalizeCategoryCode(categoryCode).ifBlank { MenuCategory.KARAHI.name }
             val cleanVarieties = varieties.filter { it.label.isNotBlank() && it.pricePkr in 50L..250000L }.take(4)
             val effectivePrice = cleanVarieties.firstOrNull()?.pricePkr ?: pricePkr
             require(effectivePrice in 50L..250000L) { "Price must be between Rs. 50 and Rs. 250,000." }
@@ -676,7 +690,7 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
                     mapOf(
                         "catalogType" to "MENU",
                         "name" to name.trim().take(80),
-                        "category" to category.name,
+                        "category" to normalizedCategory,
                         "description" to description.trim().take(300),
                         "pricePkr" to effectivePrice,
                         "varietiesDetail" to encodedVarieties,
@@ -694,7 +708,7 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
                 db.collection("menuItems").document(existingId).update(
                     mapOf(
                         "name" to name.trim().take(80),
-                        "category" to category.name,
+                        "category" to normalizedCategory,
                         "description" to description.trim().take(300),
                         "pricePkr" to effectivePrice,
                         "varietiesDetail" to encodedVarieties,
@@ -1410,6 +1424,123 @@ class AdminFinanceRepository(private val db: FirebaseFirestore) {
                 )
             ).await()
             Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun addMenuCategory(
+        displayLabel: String,
+        displayOrder: Long
+    ): Result<String> {
+        var path = "menuCategories"
+        return try {
+            requireUserId()
+            val cleanLabel = displayLabel.trim()
+            require(cleanLabel.length in 2..40) { "Category name must be 2–40 characters." }
+            val code = normalizeCategoryCode(cleanLabel)
+            require(code.length in 2..40) { "Use letters or numbers for the category name." }
+            val docId = "cat_${code.lowercase(Locale.US)}"
+            path = "menuCategories/$docId"
+            val docRef = db.collection("menuCategories").document(docId)
+            val snap = docRef.get().await()
+            if (snap.exists()) {
+                docRef.update(
+                    mapOf(
+                        "displayLabel" to cleanLabel,
+                        "displayOrder" to displayOrder.coerceIn(0L, 500L),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            } else {
+                docRef.set(
+                    mapOf(
+                        "catalogType" to "CATEGORY",
+                        "code" to code,
+                        "displayLabel" to cleanLabel,
+                        "displayOrder" to displayOrder.coerceIn(0L, 500L),
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            }
+            Result.success(cleanLabel)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteMenuCategory(categoryId: String): Result<Unit> {
+        val path = "menuCategories/$categoryId"
+        return try {
+            requireUserId()
+            require(categoryId.isNotBlank())
+            db.collection("menuCategories").document(categoryId).delete().await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun seedStarterCategoriesIfNeeded(existingCategories: List<MenuCategoryRecord>): Result<Unit> {
+        val path = "menuCategories"
+        return try {
+            requireUserId()
+            val existingIds = existingCategories.map { it.id }.toSet()
+            val batch = db.batch()
+            var ops = 0
+            defaultMenuCategories().forEach { cat ->
+                if (cat.id !in existingIds) {
+                    batch.set(
+                        db.collection("menuCategories").document(cat.id),
+                        mapOf(
+                            "catalogType" to "CATEGORY",
+                            "code" to cat.code,
+                            "displayLabel" to cat.displayLabel,
+                            "displayOrder" to cat.displayOrder,
+                            "createdAt" to FieldValue.serverTimestamp(),
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    )
+                    ops++
+                }
+            }
+            if (ops > 0) batch.commit().await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updatePublicDownloadUrl(rawUrl: String): Result<String> {
+        val path = "restaurantConfig/oak_and_smoke"
+        return try {
+            requireUserId()
+            val clean = rawUrl.trim()
+            if (clean.isNotEmpty()) {
+                require(clean.startsWith("https://") && clean.length <= 300) {
+                    "Download link must start with https:// (max 300 characters)."
+                }
+            }
+            db.collection("restaurantConfig").document("oak_and_smoke").update(
+                mapOf(
+                    "publicDownloadUrl" to clean,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(clean)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

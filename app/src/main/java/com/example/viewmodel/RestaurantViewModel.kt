@@ -13,7 +13,7 @@ import com.example.data.FeedbackCategory
 import com.example.data.FeedbackEntry
 import com.example.data.InventoryCategory
 import com.example.data.InventoryItem
-import com.example.data.MenuCategory
+import com.example.data.MenuCategoryRecord
 import com.example.data.MenuItem
 import com.example.data.NotificationItem
 import com.example.data.OrderRecord
@@ -29,6 +29,7 @@ import com.example.data.SpiceLevel
 import com.example.data.StaffMember
 import com.example.data.UserProfile
 import com.example.data.UserRoleTier
+import com.example.data.defaultMenuCategories
 import com.example.data.encodeDishVarieties
 import com.example.data.parsedVarieties
 import com.example.data.resolveCartLines
@@ -157,6 +158,18 @@ class RestaurantViewModel(
     val menuItems: StateFlow<List<MenuItem>> = menuState
         .map { (it as? UiState.Success)?.data ?: emptyList() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
+
+    private val rawMenuCategories: StateFlow<List<MenuCategoryRecord>> =
+        repo.observeMenuCategories(currentUserId)
+            .toSafeStateFlow(emptyList(), "menuCategories")
+
+    val hasCustomCategoriesSynced: StateFlow<Boolean> = rawMenuCategories
+        .map { it.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), false)
+
+    val menuCategories: StateFlow<List<MenuCategoryRecord>> = rawMenuCategories
+        .map { list -> if (list.isNotEmpty()) list else defaultMenuCategories() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), defaultMenuCategories())
 
     val diningTables: StateFlow<List<DiningTable>> = repo.observeDiningTables(currentUserId)
         .toSafeStateFlow(emptyList(), "diningTables")
@@ -654,7 +667,7 @@ class RestaurantViewModel(
     fun saveMenuItem(
         existingId: String?,
         name: String,
-        category: MenuCategory,
+        categoryCode: String,
         description: String,
         pricePkr: Long,
         varieties: List<DishVariety>,
@@ -669,7 +682,7 @@ class RestaurantViewModel(
             adminRepo.saveMenuItem(
                 existingId = existingId,
                 name = name,
-                category = category,
+                categoryCode = categoryCode,
                 description = description,
                 pricePkr = pricePkr,
                 varieties = varieties,
@@ -685,6 +698,45 @@ class RestaurantViewModel(
 
     fun deleteMenuItem(itemId: String) {
         runMutation("Dish removed from menu") { adminRepo.deleteMenuItem(itemId) }
+    }
+
+    fun addMenuCategory(label: String) {
+        val currentRaw = rawMenuCategories.value
+        val nextOrder = (menuCategories.value.maxOfOrNull { it.displayOrder } ?: 0L) + 1L
+        runMutation("Added category: ${label.trim()}") {
+            // If Firestore has no categories yet, seed defaults first so existing categories remain visible
+            if (currentRaw.isEmpty()) {
+                adminRepo.seedStarterCategoriesIfNeeded(emptyList())
+            }
+            adminRepo.addMenuCategory(label, nextOrder)
+        }
+    }
+
+    fun deleteMenuCategory(category: MenuCategoryRecord) {
+        val currentRaw = rawMenuCategories.value
+        runMutation("Removed category: ${category.displayLabel}") {
+            if (currentRaw.isEmpty()) {
+                // Seed defaults except the deleted one so removing a default category works seamlessly on first use
+                val remaining = defaultMenuCategories().filterNot { it.code.equals(category.code, ignoreCase = true) }
+                remaining.forEach { cat ->
+                    adminRepo.addMenuCategory(cat.displayLabel, cat.displayOrder)
+                }
+                Result.success(Unit)
+            } else {
+                adminRepo.deleteMenuCategory(category.id)
+            }
+        }
+    }
+
+    fun updatePublicDownloadUrl(url: String) {
+        val msg = if (url.isBlank()) {
+            "Reset QR link to default Oak & Smoke Public App URL"
+        } else {
+            "Updated live QR download link for all users!"
+        }
+        runMutation(msg) {
+            adminRepo.updatePublicDownloadUrl(url)
+        }
     }
 
     fun updateMenuItemPrice(dish: MenuItem, newPricePkr: Long) {

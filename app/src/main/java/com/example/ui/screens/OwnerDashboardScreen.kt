@@ -23,6 +23,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileDownload
@@ -70,7 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.DishVariety
 import com.example.data.ExpenseCategory
-import com.example.data.MenuCategory
+import com.example.data.MenuCategoryRecord
 import com.example.data.MenuItem
 import com.example.data.OrderType
 import com.example.data.SpiceLevel
@@ -78,6 +80,7 @@ import com.example.data.UserRoleTier
 import com.example.data.defaultFourVarietiesForPrice
 import com.example.data.formatPkr
 import com.example.data.parsedVarieties
+import com.example.data.resolveCategoryDisplayLabel
 import com.example.services.FinancialReportService
 import com.example.services.OrderPrintService
 import com.example.services.ReportPeriod
@@ -531,11 +534,14 @@ private fun OwnerAnalyticsAndReportsTab(viewModel: RestaurantViewModel) {
 @Composable
 private fun OwnerMenuStudioTab(viewModel: RestaurantViewModel) {
     val menuItems by viewModel.menuItems.collectAsStateWithLifecycle()
+    val menuCategories by viewModel.menuCategories.collectAsStateWithLifecycle()
     val effectiveRole by viewModel.effectiveRole.collectAsStateWithLifecycle()
     var editingDish by remember { mutableStateOf<MenuItem?>(null) }
     var rateEditingDish by remember { mutableStateOf<MenuItem?>(null) }
     var removingDish by remember { mutableStateOf<MenuItem?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
+    var showAddCategoryDialog by remember { mutableStateOf(false) }
+    var removingCategory by remember { mutableStateOf<MenuCategoryRecord?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var categoryFilter by remember { mutableStateOf("ALL") }
 
@@ -556,8 +562,8 @@ private fun OwnerMenuStudioTab(viewModel: RestaurantViewModel) {
     ) {
         item {
             SectionHeader(
-                title = "Menu, Dish Rates & Specials",
-                subtitle = "${menuItems.size} dishes · Add dishes, update PKR rates & remove items",
+                title = "Menu, Categories & Dish Rates",
+                subtitle = "${menuItems.size} dishes · ${menuCategories.size} categories · Add/remove anytime",
                 trailing = {
                     Button(
                         onClick = { showCreateDialog = true },
@@ -570,6 +576,93 @@ private fun OwnerMenuStudioTab(viewModel: RestaurantViewModel) {
                     }
                 }
             )
+        }
+
+        // Admin Category Manager Card (Add & Remove Categories)
+        item {
+            SmokedCard(borderColor = SmokedAmber.copy(alpha = 0.45f)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Category,
+                                contentDescription = "Manage Categories",
+                                tint = SmokedAmber,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Column {
+                                Text("Menu Categories", style = MaterialTheme.typography.titleSmall, color = SmokedAmber)
+                                Text(
+                                    text = "Add custom sections (e.g. Handi, Fast Food, Desserts) or remove unused ones",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = { showAddCategoryDialog = true },
+                            border = BorderStroke(1.dp, SmokedAmber),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.testTag("add_category_btn")
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = "Add Category", tint = SmokedAmber, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Category", color = SmokedAmber, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        menuCategories.forEach { cat ->
+                            val countInCat = menuItems.count { it.category.equals(cat.code, ignoreCase = true) }
+                            FilterChip(
+                                selected = categoryFilter == cat.code,
+                                onClick = {
+                                    categoryFilter = if (categoryFilter == cat.code) "ALL" else cat.code
+                                },
+                                label = { Text("${cat.displayLabel} ($countInCat)") },
+                                trailingIcon = if (menuCategories.size > 1) {
+                                    {
+                                        IconButton(
+                                            onClick = { removingCategory = cat },
+                                            modifier = Modifier
+                                                .size(24.dp)
+                                                .testTag("remove_category_${cat.code.lowercase()}")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Close,
+                                                contentDescription = "Remove ${cat.displayLabel}",
+                                                tint = CrimsonEmber,
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                        }
+                                    }
+                                } else null,
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = SmokedAmber,
+                                    selectedLabelColor = CharcoalDeep
+                                ),
+                                modifier = Modifier.testTag("admin_cat_chip_${cat.code.lowercase()}")
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         item {
@@ -589,7 +682,7 @@ private fun OwnerMenuStudioTab(viewModel: RestaurantViewModel) {
         item {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 val filters = listOf("ALL" to "All (${menuItems.size})") +
-                    MenuCategory.entries.map { it.name to it.displayLabel }
+                    menuCategories.map { it.code to it.displayLabel }
                 filters.forEach { (key, label) ->
                     FilterChip(
                         selected = categoryFilter == key,
@@ -660,7 +753,7 @@ private fun OwnerMenuStudioTab(viewModel: RestaurantViewModel) {
                                     formatPkr(dish.pricePkr)
                                 }
                                 Text(
-                                    text = "${MenuCategory.fromRaw(dish.category).displayLabel} · $priceRangeText",
+                                    text = "${resolveCategoryDisplayLabel(dish.category, menuCategories)} · $priceRangeText",
                                     style = MonoPriceStyle,
                                     color = SmokedAmber
                                 )
@@ -735,15 +828,16 @@ private fun OwnerMenuStudioTab(viewModel: RestaurantViewModel) {
     if (showCreateDialog || editingDish != null) {
         MenuDishEditorDialog(
             existing = editingDish,
+            categories = menuCategories,
             onDismiss = {
                 showCreateDialog = false
                 editingDish = null
             },
-            onSave = { name, cat, desc, price, varieties, imgKey, special, avail, spice, prep, broadcast ->
+            onSave = { name, catCode, desc, price, varieties, imgKey, special, avail, spice, prep, broadcast ->
                 viewModel.saveMenuItem(
                     existingId = editingDish?.id,
                     name = name,
-                    category = cat,
+                    categoryCode = catCode,
                     description = desc,
                     pricePkr = price,
                     varieties = varieties,
@@ -756,6 +850,92 @@ private fun OwnerMenuStudioTab(viewModel: RestaurantViewModel) {
                 )
                 showCreateDialog = false
                 editingDish = null
+            }
+        )
+    }
+
+    if (showAddCategoryDialog) {
+        var newCatName by remember { mutableStateOf("") }
+        var catError by remember { mutableStateOf<String?>(null) }
+
+        AlertDialog(
+            onDismissRequest = { showAddCategoryDialog = false },
+            title = { Text("Add Menu Category") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "New categories appear immediately in Customer Menu, Staff Counter POS, and Dish Editor.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = newCatName,
+                        onValueChange = { newCatName = it; catError = null },
+                        label = { Text("Category Name (e.g. Matka Handi, Fast Food, Desserts)") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("new_category_name_input")
+                    )
+                    if (catError != null) {
+                        Text(catError!!, style = MaterialTheme.typography.bodySmall, color = CrimsonEmber)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val trimmed = newCatName.trim()
+                        if (trimmed.length < 2) {
+                            catError = "Enter a category name (at least 2 characters)."
+                        } else if (menuCategories.any { it.displayLabel.equals(trimmed, ignoreCase = true) }) {
+                            catError = "This category already exists."
+                        } else {
+                            viewModel.addMenuCategory(trimmed)
+                            showAddCategoryDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = SmokedAmber, contentColor = CharcoalDeep),
+                    modifier = Modifier.testTag("confirm_add_category_btn")
+                ) {
+                    Text("Add Category", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddCategoryDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    removingCategory?.let { targetCat ->
+        val affectedDishes = menuItems.count { it.category.equals(targetCat.code, ignoreCase = true) }
+        AlertDialog(
+            onDismissRequest = { removingCategory = null },
+            title = { Text("Remove Category?") },
+            text = {
+                Text(
+                    if (affectedDishes > 0) {
+                        "Remove \"${targetCat.displayLabel}\" from the category filters? ($affectedDishes existing dish(es) will still remain in All Menu and can be reassigned anytime.)"
+                    } else {
+                        "Remove \"${targetCat.displayLabel}\" from the Oak & Smoke menu categories?"
+                    }
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (categoryFilter == targetCat.code) categoryFilter = "ALL"
+                        viewModel.deleteMenuCategory(targetCat)
+                        removingCategory = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CrimsonEmber, contentColor = MaterialTheme.colorScheme.onError),
+                    modifier = Modifier.testTag("confirm_remove_category_btn")
+                ) {
+                    Text("Remove", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { removingCategory = null }) { Text("Cancel") }
             }
         )
     }
@@ -859,8 +1039,9 @@ private fun OwnerMenuStudioTab(viewModel: RestaurantViewModel) {
 @Composable
 private fun MenuDishEditorDialog(
     existing: MenuItem?,
+    categories: List<MenuCategoryRecord>,
     onDismiss: () -> Unit,
-    onSave: (String, MenuCategory, String, Long, List<DishVariety>, String, Boolean, Boolean, SpiceLevel, Long, Boolean) -> Unit
+    onSave: (String, String, String, Long, List<DishVariety>, String, Boolean, Boolean, SpiceLevel, Long, Boolean) -> Unit
 ) {
     val initialVarieties = remember(existing?.id) {
         val parsed = existing?.parsedVarieties().orEmpty()
@@ -873,7 +1054,9 @@ private fun MenuDishEditorDialog(
     }
 
     var name by remember { mutableStateOf(existing?.name.orEmpty()) }
-    var category by remember { mutableStateOf(MenuCategory.fromRaw(existing?.category)) }
+    var categoryCode by remember {
+        mutableStateOf(existing?.category?.ifBlank { categories.firstOrNull()?.code ?: "KARAHI" } ?: (categories.firstOrNull()?.code ?: "KARAHI"))
+    }
     var description by remember { mutableStateOf(existing?.description.orEmpty()) }
     var priceText by remember { mutableStateOf(existing?.pricePkr?.toString() ?: initialVarieties[0].pricePkr.toString()) }
     var v1Label by remember { mutableStateOf(initialVarieties[0].label) }
@@ -964,8 +1147,12 @@ private fun MenuDishEditorDialog(
                 OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, maxLines = 3)
                 Text("Category", style = MaterialTheme.typography.labelMedium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    MenuCategory.entries.forEach { cat ->
-                        FilterChip(selected = category == cat, onClick = { category = cat }, label = { Text(cat.displayLabel) })
+                    categories.forEach { cat ->
+                        FilterChip(
+                            selected = categoryCode.equals(cat.code, ignoreCase = true),
+                            onClick = { categoryCode = cat.code },
+                            label = { Text(cat.displayLabel) }
+                        )
                     }
                 }
                 Text("Photo Style", style = MaterialTheme.typography.labelMedium)
@@ -1022,7 +1209,7 @@ private fun MenuDishEditorDialog(
                         parsedVarieties.isEmpty() -> errorText = "Enter at least 1 valid variety with a PKR price >= Rs. 50."
                         else -> onSave(
                             name,
-                            category,
+                            categoryCode,
                             description,
                             effectivePrice,
                             parsedVarieties,

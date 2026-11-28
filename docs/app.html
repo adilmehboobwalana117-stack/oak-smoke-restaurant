@@ -181,6 +181,46 @@
     }
     .toast.show { display: block; }
 
+    @keyframes emberPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(209,107,58,0.45); opacity: 0.9; }
+      50% { box-shadow: 0 0 0 8px rgba(209,107,58,0); opacity: 1; }
+    }
+    @keyframes riderGlide {
+      0%, 100% { transform: translateX(-3px); }
+      50% { transform: translateX(4px); }
+    }
+    @keyframes statusSlideIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .status-banner {
+      display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px;
+      border: 1px solid var(--border); background: var(--surface-2);
+      animation: statusSlideIn 0.35s ease; transition: border-color 0.35s ease, background 0.35s ease;
+    }
+    .status-banner.grilling { border-color: rgba(209,107,58,0.75); background: rgba(209,107,58,0.14); }
+    .status-banner.delivery { border-color: rgba(230,148,69,0.75); background: rgba(230,148,69,0.14); }
+    .status-banner.done { border-color: rgba(76,175,121,0.75); background: rgba(76,175,121,0.14); }
+    .status-icon-pulse {
+      width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+      font-size: 17px; background: rgba(230,148,69,0.18); flex-shrink: 0;
+    }
+    .status-banner.grilling .status-icon-pulse { animation: emberPulse 1.5s infinite ease-in-out; }
+    .status-banner.delivery .status-icon-pulse span { display: inline-block; animation: riderGlide 1.1s infinite ease-in-out; }
+    .progress-track {
+      height: 5px; border-radius: 999px; background: var(--border); overflow: hidden; margin-top: 8px;
+    }
+    .progress-fill {
+      height: 100%; border-radius: 999px; background: var(--amber); transition: width 0.5s cubic-bezier(0.22,1,0.36,1), background 0.35s ease;
+    }
+    .cat-pill {
+      display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px;
+      border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); font-size: 12px; font-weight: 600;
+    }
+    .cat-pill .cat-x {
+      background: transparent; border: none; color: var(--red); padding: 0 2px; font-size: 14px; line-height: 1; cursor: pointer;
+    }
+
     #print-area { display: none; }
     @media print {
       body > *:not(#print-area) { display: none !important; }
@@ -214,6 +254,7 @@
     <div class="header-actions">
       <span id="net-pill" class="pill online">● Online · Offline Ready</span>
       <span id="queue-pill" class="pill amber" style="display:none">0 Pending Sync</span>
+      <button id="download-app-btn" onclick="openPublicDownloadModal()">📱 Get Android App</button>
       <button id="install-pc-btn" class="btn-primary">⬇ Install on PC</button>
     </div>
   </header>
@@ -243,10 +284,12 @@
   <script>
     const STORAGE_KEYS = {
       MENU: 'oak_smoke_pc_menu_v1',
+      CATEGORIES: 'oak_smoke_pc_categories_v1',
       TABLES: 'oak_smoke_pc_tables_v1',
       ORDERS: 'oak_smoke_pc_orders_v1',
       EXPENSES: 'oak_smoke_pc_expenses_v1'
     };
+    const ANDROID_PLAY_URL = 'https://play.google.com/store/apps/details?id=com.aistudio.oakandsmoke.hsplrk';
 
     const STARTER_MENU = [
       { id: 'dish_mutton_karahi', name: 'Oak Smoked Mutton Karahi', category: 'KARAHI', desc: 'Tender goat simmered in fresh tomatoes, ginger & green chilies over oak embers.', available: true, special: true, varieties: [ {label:'Quarter (250g)', price:1950}, {label:'Half (500g)', price:2850}, {label:'Full (1 Kg)', price:5200}, {label:'Family Handi (1.5 Kg)', price:7400} ] },
@@ -281,13 +324,13 @@
       OUTDOOR_LAWN: 'Outdoor Grill Lawn'
     };
 
-    const CATEGORIES = {
-      KARAHI: 'Karahi',
-      BBQ: 'Smoked BBQ',
-      PLATTERS: 'Platters',
-      NAAN_SIDES: 'Naan & Sides',
-      BEVERAGES: 'Beverages'
-    };
+    const STARTER_CATEGORIES = [
+      { code: 'KARAHI', label: 'Karahi' },
+      { code: 'BBQ', label: 'Smoked BBQ' },
+      { code: 'PLATTERS', label: 'Platters' },
+      { code: 'NAAN_SIDES', label: 'Naan & Sides' },
+      { code: 'BEVERAGES', label: 'Beverages' }
+    ];
 
     function loadJson(key, fallback) {
       try {
@@ -302,6 +345,7 @@
 
     const state = {
       portal: (location.hash || '#pos').replace('#', '') || 'pos',
+      categories: loadJson(STORAGE_KEYS.CATEGORIES, STARTER_CATEGORIES),
       menu: loadJson(STORAGE_KEYS.MENU, STARTER_MENU),
       tables: loadJson(STORAGE_KEYS.TABLES, build25StarterTables()),
       orders: loadJson(STORAGE_KEYS.ORDERS, []),
@@ -323,7 +367,13 @@
       custCategory: 'ALL'
     };
 
+    function catLabel(code) {
+      const found = state.categories.find(c => c.code === code);
+      return found ? found.label : String(code || '').replace(/_/g, ' ');
+    }
+
     function saveAll() {
+      localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(state.categories));
       localStorage.setItem(STORAGE_KEYS.MENU, JSON.stringify(state.menu));
       localStorage.setItem(STORAGE_KEYS.TABLES, JSON.stringify(state.tables));
       localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(state.orders));
@@ -512,8 +562,8 @@
               </div>
               <div class="chip-row">
                 <button class="chip ${state.category === 'ALL' ? 'active' : ''}" onclick="state.category='ALL';render()">All</button>
-                ${Object.entries(CATEGORIES).map(([k, lbl]) => `
-                  <button class="chip ${state.category === k ? 'active' : ''}" onclick="state.category='${k}';render()">${lbl}</button>
+                ${state.categories.map(c => `
+                  <button class="chip ${state.category === c.code ? 'active' : ''}" onclick="state.category='${escapeHtml(c.code)}';render()">${escapeHtml(c.label)}</button>
                 `).join('')}
               </div>
               <div class="dish-list">
@@ -528,7 +578,7 @@
                       <div class="dish-top">
                         <div>
                           <div style="font-weight:700;font-size:14px;">${escapeHtml(dish.name)}</div>
-                          <div class="muted" style="font-size:11px;">${CATEGORIES[dish.category] || dish.category}</div>
+                          <div class="muted" style="font-size:11px;">${escapeHtml(catLabel(dish.category))}</div>
                         </div>
                         <span class="price">${fmtPkr(activeV.price)}</span>
                       </div>
@@ -597,7 +647,7 @@
     }
 
     function renderKitchen() {
-      const active = state.orders.filter(o => ['PLACED','GRILLING','READY'].includes(o.status));
+      const active = state.orders.filter(o => ['PLACED','GRILLING','READY','OUT_FOR_DELIVERY'].includes(o.status));
       return `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
           <div>
@@ -632,9 +682,10 @@
                 `).join('')}
                 ${o.notes ? `<div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(209,107,58,0.16);color:var(--amber);font-size:12px;">Note: ${escapeHtml(o.notes)}</div>` : ''}
                 <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
-                  ${o.status === 'PLACED' ? `<button class="btn-copper" style="flex:1;" onclick="advanceOrder('${o.id}','GRILLING')">Start Grilling</button>` : ''}
+                  ${o.status === 'PLACED' ? `<button class="btn-copper" style="flex:1;" onclick="advanceOrder('${o.id}','GRILLING')">Start Preparing</button>` : ''}
                   ${o.status === 'GRILLING' ? `<button class="btn-green" style="flex:1;" onclick="advanceOrder('${o.id}','READY')">Mark Ready</button>` : ''}
-                  ${o.status === 'READY' ? `<button class="btn-primary" style="flex:1;" onclick="advanceOrder('${o.id}','DELIVERED')">Complete &amp; Paid</button>` : ''}
+                  ${o.status === 'READY' && o.orderType === 'COD_DELIVERY' ? `<button class="btn-primary" style="flex:1;" onclick="advanceOrder('${o.id}','OUT_FOR_DELIVERY')">🛵 Out for Delivery</button>` : ''}
+                  ${(o.status === 'READY' && o.orderType !== 'COD_DELIVERY') || o.status === 'OUT_FOR_DELIVERY' ? `<button class="btn-green" style="flex:1;" onclick="advanceOrder('${o.id}','DELIVERED')">Complete &amp; Paid</button>` : ''}
                   <button onclick="printKotById('${o.id}')">🖨 Print KOT</button>
                 </div>
               </div>
@@ -662,6 +713,24 @@
         <div class="card" style="margin-bottom:16px;">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
             <div>
+              <h3>Menu Categories (${state.categories.length})</h3>
+              <div class="muted">Add or remove menu categories shown in Staff POS, Dish Editor &amp; Customer Menu.</div>
+            </div>
+            <button class="btn-primary btn-sm" onclick="openAddCategoryModal()">+ Add Category</button>
+          </div>
+          <div class="chip-row">
+            ${state.categories.map(c => `
+              <span class="cat-pill">
+                <span>${escapeHtml(c.label)}</span>
+                ${state.categories.length > 1 ? `<button class="cat-x" title="Remove category" onclick="removeCategory('${escapeHtml(c.code)}')">&times;</button>` : ''}
+              </span>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+            <div>
               <h3>Menu &amp; 4-Variety Rate Studio (${state.menu.length} Dishes)</h3>
               <div class="muted">Add dishes, edit all 4 variety names &amp; PKR rates, or remove items.</div>
             </div>
@@ -679,7 +748,7 @@
                   <div class="dish-top">
                     <div>
                       <strong>${escapeHtml(d.name)}</strong>
-                      <div class="muted" style="font-size:12px;">${CATEGORIES[d.category] || d.category} · ${d.varieties.length} varieties</div>
+                      <div class="muted" style="font-size:12px;">${escapeHtml(catLabel(d.category))} · ${d.varieties.length} varieties</div>
                     </div>
                     <span class="price" style="font-size:12px;">${range}</span>
                   </div>
@@ -758,8 +827,8 @@
             </div>
             <div class="chip-row">
               <button class="chip ${state.custCategory === 'ALL' ? 'active' : ''}" onclick="state.custCategory='ALL';render()">All Menu</button>
-              ${Object.entries(CATEGORIES).map(([k, lbl]) => `
-                <button class="chip ${state.custCategory === k ? 'active' : ''}" onclick="state.custCategory='${k}';render()">${lbl}</button>
+              ${state.categories.map(c => `
+                <button class="chip ${state.custCategory === c.code ? 'active' : ''}" onclick="state.custCategory='${escapeHtml(c.code)}';render()">${escapeHtml(c.label)}</button>
               `).join('')}
             </div>
             <div class="dish-list">
@@ -823,6 +892,35 @@
               <input id="cust-addr" placeholder="Hasilpur Delivery Address" />
             </div>
             <button class="btn-primary" ${lines.length===0?'disabled':''} onclick="submitCustomerCodOrder()">Place Cash on Delivery Order</button>
+
+            ${state.orders.length > 0 ? `
+              <div style="border-top:1px solid var(--border);padding-top:12px;display:flex;flex-direction:column;gap:8px;">
+                <strong style="color:var(--amber);">Live Order Status Tracker</strong>
+                ${state.orders.slice(0, 3).map(o => {
+                  const meta = o.status === 'GRILLING'
+                    ? { cls: 'grilling', icon: '🔥', title: 'Preparing on Charcoal Grill', pct: 45 }
+                    : o.status === 'READY'
+                    ? { cls: 'done', icon: '🍽️', title: 'Ready at Kitchen Counter', pct: 68 }
+                    : o.status === 'OUT_FOR_DELIVERY'
+                    ? { cls: 'delivery', icon: '🛵', title: 'Rider Out for Delivery', pct: 86 }
+                    : o.status === 'DELIVERED'
+                    ? { cls: 'done', icon: '✅', title: 'Delivered · Completed', pct: 100 }
+                    : { cls: '', icon: '🧾', title: 'Order Placed · Sent to Kitchen', pct: 20 };
+                  return `
+                    <div class="status-banner ${meta.cls}">
+                      <div class="status-icon-pulse"><span>${meta.icon}</span></div>
+                      <div style="flex:1;">
+                        <div style="display:flex;justify-content:space-between;font-size:12px;">
+                          <strong>${escapeHtml(o.orderNumber)}</strong>
+                          <span class="price">${fmtPkr(o.totalPkr)}</span>
+                        </div>
+                        <div class="muted" style="font-size:12px;color:var(--text);">${meta.title}</div>
+                        <div class="progress-track"><div class="progress-fill" style="width:${meta.pct}%;${o.status==='DELIVERED'?'background:var(--green);':''}"></div></div>
+                      </div>
+                    </div>`;
+                }).join('')}
+              </div>
+            ` : ''}
           </div>
         </div>
       `;
@@ -977,6 +1075,60 @@
       `);
     }
 
+    window.openAddCategoryModal = () => {
+      openModal(`
+        <h2 style="margin-top:0;color:var(--amber);">Add Menu Category</h2>
+        <p class="muted">Create a new category (e.g. Desserts, Handi, Fast Food, Tea &amp; Kahwa).</p>
+        <input id="new-cat-label" placeholder="Category Name" />
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+          <button onclick="closeModal()">Cancel</button>
+          <button class="btn-primary" onclick="saveNewCategory()">Add Category</button>
+        </div>
+      `);
+    };
+
+    window.saveNewCategory = () => {
+      const label = (document.getElementById('new-cat-label')?.value || '').trim();
+      if (label.length < 2) { showToast('Enter a category name (at least 2 letters).'); return; }
+      const code = label.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 36);
+      if (code.length < 2) { showToast('Use letters or numbers for the category name.'); return; }
+      if (state.categories.some(c => c.code === code)) {
+        showToast('That category already exists.');
+        return;
+      }
+      state.categories.push({ code, label });
+      saveAll();
+      closeModal();
+      showToast(`Category "${label}" added!`);
+      render();
+    };
+
+    window.removeCategory = (code) => {
+      if (state.categories.length <= 1) { showToast('Keep at least one category.'); return; }
+      const target = state.categories.find(c => c.code === code);
+      state.categories = state.categories.filter(c => c.code !== code);
+      if (state.category === code) state.category = 'ALL';
+      if (state.custCategory === code) state.custCategory = 'ALL';
+      saveAll();
+      showToast(`Removed category "${target ? target.label : code}".`);
+      render();
+    };
+
+    window.openPublicDownloadModal = () => {
+      openModal(`
+        <h2 style="margin-top:0;color:var(--amber);">Download Oak &amp; Smoke App</h2>
+        <p class="muted">Open for everyone in Hasilpur — download the Android app or install directly on your PC with no verification code required.</p>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px;">
+          <a class="btn btn-primary" style="text-align:center;text-decoration:none;" href="${ANDROID_PLAY_URL}" target="_blank" rel="noopener">📱 Download Android App (Google Play)</a>
+          <button class="btn-green" onclick="closeModal();document.getElementById('install-pc-btn').click();">💻 Install PC / Desktop App (Windows &amp; Mac)</button>
+          <button onclick="navigator.clipboard?.writeText('${ANDROID_PLAY_URL}').then(()=>showToast('Public download link copied!'))">📋 Copy Public Download Link</button>
+        </div>
+        <div style="margin-top:14px;text-align:right;">
+          <button onclick="closeModal()">Close</button>
+        </div>
+      `);
+    };
+
     window.openDishModal = (dishId) => {
       const d = dishId ? state.menu.find(x => x.id === dishId) : null;
       const vs = d ? d.varieties : [
@@ -990,7 +1142,7 @@
         <div style="display:flex;flex-direction:column;gap:8px;">
           <input id="m-name" placeholder="Dish Name" value="${escapeHtml(d?.name || '')}" />
           <select id="m-cat">
-            ${Object.entries(CATEGORIES).map(([k, lbl]) => `<option value="${k}" ${d?.category===k?'selected':''}>${lbl}</option>`).join('')}
+            ${state.categories.map(c => `<option value="${escapeHtml(c.code)}" ${d?.category===c.code?'selected':''}>${escapeHtml(c.label)}</option>`).join('')}
           </select>
           <input id="m-desc" placeholder="Short description" value="${escapeHtml(d?.desc || '')}" />
           <strong style="color:var(--amber);margin-top:4px;">4 Product Varieties (Name + PKR Price)</strong>

@@ -89,7 +89,7 @@ service cloud.firestore {
         data.keys().hasOnly([
           'restaurantName', 'currency', 'ownerUid', 'ownerInitialized',
           'autoPrintDailyReport', 'loyaltyEarnPer100Pkr', 'loyaltyPointValuePkr',
-          'createdAt', 'updatedAt'
+          'publicDownloadUrl', 'createdAt', 'updatedAt'
         ]) &&
         data.restaurantName is string && data.restaurantName.size() >= 2 && data.restaurantName.size() <= 100 &&
         data.currency == 'PKR' &&
@@ -98,6 +98,7 @@ service cloud.firestore {
         data.autoPrintDailyReport is bool &&
         data.loyaltyEarnPer100Pkr is int && data.loyaltyEarnPer100Pkr >= 0 && data.loyaltyEarnPer100Pkr <= 100 &&
         data.loyaltyPointValuePkr is int && data.loyaltyPointValuePkr >= 1 && data.loyaltyPointValuePkr <= 500 &&
+        (!('publicDownloadUrl' in data) || (data.publicDownloadUrl is string && data.publicDownloadUrl.size() <= 300 && (data.publicDownloadUrl == '' || data.publicDownloadUrl.matches('^https://.*')))) &&
         isValidTimestamp(data.createdAt) &&
         isValidTimestamp(data.updatedAt);
     }
@@ -159,7 +160,7 @@ service cloud.firestore {
         ]) &&
         data.catalogType == 'MENU' &&
         data.name is string && data.name.size() >= 2 && data.name.size() <= 80 &&
-        data.category in ['KARAHI', 'BBQ', 'PLATTERS', 'NAAN_SIDES', 'BEVERAGES'] &&
+        data.category is string && data.category.size() >= 2 && data.category.size() <= 40 && data.category.matches('^[A-Z0-9_]+$') &&
         data.description is string && data.description.size() <= 300 &&
         data.pricePkr is int && data.pricePkr >= 50 && data.pricePkr <= 250000 &&
         (!('varietiesDetail' in data) || (data.varietiesDetail is string && data.varietiesDetail.size() <= 600)) &&
@@ -361,6 +362,21 @@ service cloud.firestore {
         data.capacity is int && data.capacity >= 1 && data.capacity <= 30 &&
         data.available is bool &&
         data.displayOrder is int && data.displayOrder >= 0 && data.displayOrder <= 1000 &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidMenuCategory(data) {
+      return data.keys().hasAll([
+          'catalogType', 'code', 'displayLabel', 'displayOrder', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'catalogType', 'code', 'displayLabel', 'displayOrder', 'createdAt', 'updatedAt'
+        ]) &&
+        data.catalogType == 'CATEGORY' &&
+        data.code is string && data.code.size() >= 2 && data.code.size() <= 40 && data.code.matches('^[A-Z0-9_]+$') &&
+        data.displayLabel is string && data.displayLabel.size() >= 2 && data.displayLabel.size() <= 40 &&
+        data.displayOrder is int && data.displayOrder >= 0 && data.displayOrder <= 500 &&
         isValidTimestamp(data.createdAt) &&
         isValidTimestamp(data.updatedAt);
     }
@@ -677,6 +693,21 @@ service cloud.firestore {
           (isStaffOrAbove() && incoming().diff(existing()).affectedKeys().hasOnly(['available', 'updatedAt']))
         );
       allow delete: if isSignedIn() && isValidId(tableId) && isManagerOrOwner();
+    }
+
+    match /menuCategories/{categoryId} {
+      allow get: if isSignedIn() && isValidId(categoryId);
+      allow list: if isSignedIn() && resource.data.catalogType == 'CATEGORY';
+      allow create: if isSignedIn() &&
+        isValidId(categoryId) &&
+        isValidMenuCategory(incoming()) &&
+        (isManagerOrOwner() || isInitialOwnerSetupAfter());
+      allow update: if isSignedIn() &&
+        isValidId(categoryId) &&
+        isValidMenuCategory(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        isManagerOrOwner();
+      allow delete: if isSignedIn() && isValidId(categoryId) && isManagerOrOwner();
     }
   }
 }

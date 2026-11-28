@@ -106,6 +106,7 @@ import com.example.data.cartItemKey
 import com.example.data.formatPkr
 import com.example.data.parsedVarieties
 import com.example.data.resolveCartLines
+import com.example.services.AppDownloadTarget
 import com.example.services.AppPwaQrService
 import com.example.ui.components.AppScreenshotsGallerySheet
 import com.example.ui.components.PrivacyAndScreenshotsCard
@@ -230,7 +231,7 @@ fun GuestCustomerShell(
                                 color = MaterialTheme.colorScheme.onBackground
                             )
                             Text(
-                                text = "Hasilpur · Guest Customer",
+                                text = "Hasilpur · Open Public Menu",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = SmokedAmber
                             )
@@ -339,20 +340,14 @@ fun GuestCustomerShell(
                     modifier = Modifier.fillMaxSize(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    val activePublicQrUrl = remember(context) {
+                        AppPwaQrService.resolveTargetUrl(context, AppDownloadTarget.PUBLIC_DOWNLOAD)
+                    }
                     TopInstalledPwaQrStrip(
                         visible = showTopPwaQrStrip,
+                        qrUrl = activePublicQrUrl,
                         onOpenQrModal = { showPwaQrModal = true },
-                        onDownloadPwa = {
-                            AppPwaQrService.openPwaDownload(context)
-                                .onSuccess {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar("Opening Oak & Smoke Web PWA. Tap 'Install App' in your browser.")
-                                    }
-                                }
-                                .onFailure {
-                                    showPwaQrModal = true
-                                }
-                        },
+                        onDownloadPwa = { showPwaQrModal = true },
                         onDismiss = { showTopPwaQrStrip = false },
                         modifier = Modifier.widthIn(max = maxContentWidth)
                     )
@@ -369,6 +364,7 @@ fun GuestCustomerShell(
                                 onIncrementCart = onIncrementCart,
                                 onDecrementCart = onDecrementCart,
                                 onOpenCheckout = { showGuestCheckoutSheet = true },
+                                onOpenQrModal = { showPwaQrModal = true },
                                 onRequestSignIn = { launchGoogleSignIn() }
                             )
                             "guest_tables" -> GuestTablesPreviewTab(
@@ -502,6 +498,7 @@ private fun GuestMenuTab(
     onIncrementCart: (String) -> Unit,
     onDecrementCart: (String) -> Unit,
     onOpenCheckout: () -> Unit,
+    onOpenQrModal: () -> Unit,
     onRequestSignIn: () -> Unit
 ) {
     var selectedFilter by remember { mutableStateOf("ALL") }
@@ -568,7 +565,7 @@ private fun GuestMenuTab(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            StatusPill(label = "GUEST MODE · CUSTOMER MENU", color = SmokedAmber)
+                            StatusPill(label = "OPEN PUBLIC ACCESS · FREE TO BROWSE", color = SmokedAmber)
                             StatusPill(label = "COD ONLY", color = CorianderGreen)
                         }
                         Column {
@@ -587,40 +584,64 @@ private fun GuestMenuTab(
                 }
             }
 
-            // Guest Customer Domain Banner
+            // Open Public Access Banner with instant QR Share & 1-Tap Sign In
             item {
                 SmokedCard(borderColor = SmokedAmber.copy(alpha = 0.55f)) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.LocalFireDepartment,
-                            contentDescription = "Guest Customer Access",
-                            tint = SmokedAmber,
-                            modifier = Modifier.size(26.dp)
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Browsing as Guest Customer",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = SmokedAmber
-                            )
-                            Text(
-                                text = "Explore dishes, PKR prices & build your COD cart. Sign in with Google to order with GPS tracking or book tables.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        OutlinedButton(
-                            onClick = onRequestSignIn,
-                            border = BorderStroke(1.dp, SmokedAmber),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Text("Sign In", color = SmokedAmber, style = MaterialTheme.typography.labelSmall)
+                            Icon(
+                                imageVector = Icons.Filled.LocalFireDepartment,
+                                contentDescription = "Open Public Access",
+                                tint = SmokedAmber,
+                                modifier = Modifier.size(26.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Open Public Menu — No Login Needed",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = SmokedAmber
+                                )
+                                Text(
+                                    text = "Browse all dishes, 4 varieties & 25 tables freely. Share the QR code for easy download, or sign in in 1 tap when placing a live COD order.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = onOpenQrModal,
+                                border = BorderStroke(1.dp, CorianderGreen),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("public_banner_qr_btn")
+                            ) {
+                                Text("Scan / Share QR", color = CorianderGreen, style = MaterialTheme.typography.labelMedium)
+                            }
+                            OutlinedButton(
+                                onClick = onRequestSignIn,
+                                border = BorderStroke(1.dp, SmokedAmber),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("public_banner_sign_in_btn")
+                            ) {
+                                Text("1-Tap Sign In", color = SmokedAmber, style = MaterialTheme.typography.labelMedium)
+                            }
                         }
                     }
                 }

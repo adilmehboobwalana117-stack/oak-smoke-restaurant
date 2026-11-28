@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.InstallMobile
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.QrCode2
@@ -44,6 +45,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -61,6 +63,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -143,15 +146,15 @@ fun TopBarQrPwaActionButton(
     ) {
         Icon(
             imageVector = Icons.Filled.QrCode2,
-            contentDescription = "Open App QR Code and PWA Download",
+            contentDescription = "Open App QR Code and Download Link",
             tint = SmokedAmber
         )
     }
 }
 
 /**
- * Top-of-App PWA Download & Scannable QR Strip rendered after app installation.
- * Displays a live scannable mini QR code + "Download PWA" button right at the top of the app.
+ * Top-of-App Public Download & Scannable QR Strip rendered after app installation.
+ * Displays a live scannable mini QR code + direct download trigger right at the top of the app.
  */
 @Composable
 fun TopInstalledPwaQrStrip(
@@ -159,10 +162,18 @@ fun TopInstalledPwaQrStrip(
     onOpenQrModal: () -> Unit,
     onDownloadPwa: () -> Unit,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    qrUrl: String = ""
 ) {
     val context = LocalContext.current
     val isInstalled = remember(context) { AppPwaQrService.isAppInstalled(context) }
+    val resolvedQrUrl = remember(qrUrl, context) {
+        if (AppPwaQrService.isValidHttpsUrl(qrUrl)) {
+            qrUrl.trim()
+        } else {
+            AppPwaQrService.resolveTargetUrl(context, AppDownloadTarget.PUBLIC_DOWNLOAD)
+        }
+    }
 
     AnimatedVisibility(
         visible = visible && isInstalled,
@@ -203,9 +214,9 @@ fun TopInstalledPwaQrStrip(
                         .testTag("top_qr_code_preview")
                 ) {
                     ScannableQrCodeBox(
-                        content = AppPwaQrService.PWA_APP_URL,
-                        size = 56.dp,
-                        padding = 4.dp
+                        content = resolvedQrUrl,
+                        size = 58.dp,
+                        padding = 3.dp
                     )
                 }
 
@@ -221,7 +232,7 @@ fun TopInstalledPwaQrStrip(
                     ) {
                         Icon(
                             imageVector = Icons.Filled.CheckCircle,
-                            contentDescription = "Installed App Active",
+                            contentDescription = "Public QR Active",
                             tint = CorianderGreen,
                             modifier = Modifier.size(14.dp)
                         )
@@ -257,12 +268,12 @@ fun TopInstalledPwaQrStrip(
                 ) {
                     Icon(
                         imageVector = Icons.Filled.InstallMobile,
-                        contentDescription = "Download PWA App",
+                        contentDescription = "Scan or Download App",
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        text = "PC / PWA",
+                        text = stringResource(R.string.pwa_download_cta),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -276,7 +287,7 @@ fun TopInstalledPwaQrStrip(
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Close,
-                        contentDescription = "Hide QR and PWA strip",
+                        contentDescription = "Hide QR and download strip",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)
                     )
@@ -287,22 +298,34 @@ fun TopInstalledPwaQrStrip(
 }
 
 /**
- * Full Scannable QR Code & PWA Download Sheet allowing users/staff/owners to:
- * - Scan or enlarge the Oak & Smoke Web PWA or Android App QR code
- * - Launch the Web PWA link to install ("Add to Home Screen")
- * - Pin an Android Home Screen shortcut
- * - Share or copy the download link
- * - Print a table-tent QR Code poster via Android PrintManager
+ * Full Scannable QR Code & Public App Download Sheet allowing anyone to:
+ * - Scan the live public QR code immediately with any smartphone camera to download the app
+ * - Switch between Public App (Play Store / Owner Custom Link), PC & Web PWA, and Tester Opt-In
+ * - Open, share, copy, pin Home Screen shortcut, or print a Table-Tent QR Poster
+ * - (Owner/Manager) Customize the live public download link synced across all devices
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PwaDownloadAndQrModal(
     onDismiss: () -> Unit,
-    onFeedback: (String) -> Unit
+    onFeedback: (String) -> Unit,
+    configPublicDownloadUrl: String = "",
+    canEditDownloadUrl: Boolean = false,
+    onSaveCustomDownloadUrl: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
-    var selectedTarget by remember { mutableStateOf(AppDownloadTarget.WEB_PWA) }
+    var selectedTarget by remember { mutableStateOf(AppDownloadTarget.PUBLIC_DOWNLOAD) }
     var pwaActivated by remember { mutableStateOf(AppPwaQrService.hasPinnedOrDownloadedPwa(context)) }
+    var showCustomUrlEditor by remember { mutableStateOf(false) }
+    var customUrlInput by remember(configPublicDownloadUrl) {
+        mutableStateOf(
+            configPublicDownloadUrl.ifBlank { AppPwaQrService.getCachedPublicDownloadUrl(context) }
+        )
+    }
+
+    val activeUrl = remember(selectedTarget, configPublicDownloadUrl, customUrlInput) {
+        AppPwaQrService.resolveTargetUrl(context, selectedTarget, configPublicDownloadUrl)
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -334,12 +357,12 @@ fun PwaDownloadAndQrModal(
                     )
                 }
                 StatusPill(
-                    label = if (pwaActivated) "PWA READY" else "INSTALLED",
+                    label = if (pwaActivated) "SCAN READY" else "PUBLIC QR",
                     color = CorianderGreen
                 )
             }
 
-            // Target selector: Web PWA, Play Tester Opt-In, or Play Store
+            // Target selector: Public App (Default), PC & Web App, or Play Tester Opt-In
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -366,7 +389,7 @@ fun PwaDownloadAndQrModal(
                 }
             }
 
-            // Large Scannable QR Code Card
+            // Large Scannable QR Code Card with high-contrast quiet zone
             SmokedCard(borderColor = SmokedAmber.copy(alpha = 0.65f)) {
                 Column(
                     modifier = Modifier
@@ -376,17 +399,33 @@ fun PwaDownloadAndQrModal(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     ScannableQrCodeBox(
-                        content = selectedTarget.url,
-                        size = 212.dp,
-                        padding = 12.dp,
+                        content = activeUrl,
+                        size = 224.dp,
+                        padding = 14.dp,
                         modifier = Modifier.testTag("modal_large_qr_code")
                     )
                     Text(
-                        text = "Point any phone camera to scan",
+                        text = "Point any phone camera to scan & download",
                         style = MaterialTheme.typography.titleSmall,
                         color = SmokedAmber,
                         textAlign = TextAlign.Center
                     )
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, EmberBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = activeUrl,
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
                     Text(
                         text = selectedTarget.description,
                         style = MaterialTheme.typography.bodySmall,
@@ -396,13 +435,13 @@ fun PwaDownloadAndQrModal(
                 }
             }
 
-            // Primary Download / Open PWA Button
+            // Primary Open / Download Button
             Button(
                 onClick = {
-                    AppPwaQrService.openPwaDownload(context, selectedTarget.url)
+                    AppPwaQrService.openPwaDownload(context, activeUrl)
                         .onSuccess {
                             pwaActivated = true
-                            onFeedback("Opening ${selectedTarget.label}. Tap 'Install App' or 'Add to Home Screen' in your browser.")
+                            onFeedback("Opening ${selectedTarget.label} link in browser.")
                         }
                         .onFailure {
                             onFeedback("Unable to open browser for ${selectedTarget.label}.")
@@ -420,15 +459,15 @@ fun PwaDownloadAndQrModal(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Download,
-                    contentDescription = "Download PWA App",
+                    contentDescription = "Open Download Link",
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = when (selectedTarget) {
+                        AppDownloadTarget.PUBLIC_DOWNLOAD -> "Open Public App Download Link"
                         AppDownloadTarget.WEB_PWA -> stringResource(R.string.pwa_qr_open_browser)
                         AppDownloadTarget.PLAY_TESTER -> "Open Play Tester Opt-In Link"
-                        AppDownloadTarget.ANDROID_STORE -> "Open Google Play Store Link"
                     },
                     fontWeight = FontWeight.Bold
                 )
@@ -447,7 +486,7 @@ fun PwaDownloadAndQrModal(
                                     pwaActivated = true
                                     onFeedback("Home Screen shortcut prompt sent for Oak & Smoke.")
                                 } else {
-                                    onFeedback("Your launcher does not support pinned shortcuts; use the Web PWA link instead.")
+                                    onFeedback("Launcher does not support pinned shortcuts; use the QR or download link.")
                                 }
                             }
                             .onFailure {
@@ -478,7 +517,7 @@ fun PwaDownloadAndQrModal(
 
                 OutlinedButton(
                     onClick = {
-                        AppPwaQrService.shareAppLink(context, selectedTarget.url)
+                        AppPwaQrService.shareAppLink(context, activeUrl)
                             .onFailure { onFeedback("Unable to open Share sheet.") }
                     },
                     border = BorderStroke(1.dp, CorianderGreen),
@@ -511,8 +550,8 @@ fun PwaDownloadAndQrModal(
             ) {
                 OutlinedButton(
                     onClick = {
-                        AppPwaQrService.copyLinkToClipboard(context, selectedTarget.url)
-                            .onSuccess { onFeedback("Oak & Smoke app link copied to clipboard.") }
+                        AppPwaQrService.copyLinkToClipboard(context, activeUrl)
+                            .onSuccess { onFeedback("Public download link copied to clipboard.") }
                             .onFailure { onFeedback("Could not copy link.") }
                     },
                     border = BorderStroke(1.dp, EmberBorder),
@@ -538,7 +577,7 @@ fun PwaDownloadAndQrModal(
 
                 OutlinedButton(
                     onClick = {
-                        AppPwaQrService.printTableQrPoster(context, selectedTarget.url, selectedTarget.label)
+                        AppPwaQrService.printTableQrPoster(context, activeUrl, selectedTarget.label)
                             .onSuccess { onFeedback("Print preview opened for Table QR Poster.") }
                             .onFailure { err -> onFeedback(err.message ?: "Print failed.") }
                     },
@@ -564,10 +603,110 @@ fun PwaDownloadAndQrModal(
                 }
             }
 
+            // Owner / Manager Live Public Download URL Override
+            if (canEditDownloadUrl && onSaveCustomDownloadUrl != null) {
+                SmokedCard(borderColor = EmberBorder) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Custom Public QR Link (Admin)",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = SmokedAmber
+                                )
+                                Text(
+                                    text = "Point the public QR to your Google Play URL, GitHub Pages PWA, or hosted APK link.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(
+                                onClick = { showCustomUrlEditor = !showCustomUrlEditor },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("toggle_custom_qr_url_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Edit,
+                                    contentDescription = "Edit custom public QR download URL",
+                                    tint = SmokedAmber
+                                )
+                            }
+                        }
+
+                        AnimatedVisibility(visible = showCustomUrlEditor) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                    value = customUrlInput,
+                                    onValueChange = { customUrlInput = it },
+                                    label = { Text("Public HTTPS Download URL") },
+                                    placeholder = { Text("https://play.google.com/store/apps/details?id=...") },
+                                    singleLine = true,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("custom_qr_url_input")
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            customUrlInput = ""
+                                            AppPwaQrService.cachePublicDownloadUrl(context, "")
+                                            onSaveCustomDownloadUrl("")
+                                            selectedTarget = AppDownloadTarget.PUBLIC_DOWNLOAD
+                                            showCustomUrlEditor = false
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(48.dp)
+                                    ) {
+                                        Text("Reset Default")
+                                    }
+                                    Button(
+                                        onClick = {
+                                            val cleaned = customUrlInput.trim()
+                                            if (cleaned.isNotEmpty() && !AppPwaQrService.isValidHttpsUrl(cleaned)) {
+                                                onFeedback("Please enter a valid https:// download link.")
+                                            } else {
+                                                AppPwaQrService.cachePublicDownloadUrl(context, cleaned)
+                                                onSaveCustomDownloadUrl(cleaned)
+                                                selectedTarget = AppDownloadTarget.PUBLIC_DOWNLOAD
+                                                showCustomUrlEditor = false
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = SmokedAmber,
+                                            contentColor = CharcoalDeep
+                                        ),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(48.dp)
+                                            .testTag("save_custom_qr_url_btn")
+                                    ) {
+                                        Text("Update QR", fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             HorizontalDivider(color = EmberBorder)
 
             Text(
-                text = "Display this QR code on Oak & Smoke tables or open the PC & Web PWA link in Chrome/Edge on Windows, Mac, or Chromebook and click 'Install App' for standalone PC Counter POS, Kitchen KOT, Admin & Customer access.",
+                text = "Print or display this QR code on Oak & Smoke tables & counter receipts so anyone can scan and download the app immediately on Android or PC.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center

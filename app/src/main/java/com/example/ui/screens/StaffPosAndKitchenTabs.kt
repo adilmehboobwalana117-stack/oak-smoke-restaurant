@@ -65,7 +65,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.CartLine
 import com.example.data.DiningTable
-import com.example.data.MenuCategory
+import com.example.data.MenuCategoryRecord
 import com.example.data.MenuItem
 import com.example.data.OakAndSmokeSeeds
 import com.example.data.OrderRecord
@@ -79,6 +79,7 @@ import com.example.data.formatTimestampShort
 import com.example.data.parsedLineItems
 import com.example.data.parsedVarieties
 import com.example.data.resolveCartLines
+import com.example.data.resolveCategoryDisplayLabel
 import com.example.services.OrderPrintService
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.SectionHeader
@@ -98,6 +99,7 @@ import com.example.viewmodel.RestaurantViewModel
 fun StaffTakeOrderTab(viewModel: RestaurantViewModel) {
     val context = LocalContext.current
     val menuItems by viewModel.menuItems.collectAsStateWithLifecycle()
+    val menuCategories by viewModel.menuCategories.collectAsStateWithLifecycle()
     val diningTables by viewModel.diningTables.collectAsStateWithLifecycle()
     val effectiveRole by viewModel.effectiveRole.collectAsStateWithLifecycle()
     val isBusy by viewModel.isBusy.collectAsStateWithLifecycle()
@@ -121,7 +123,7 @@ fun StaffTakeOrderTab(viewModel: RestaurantViewModel) {
     var deliveryAddress by remember { mutableStateOf("") }
     var kitchenNotes by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf<MenuCategory?>(null) }
+    var selectedCategoryCode by remember { mutableStateOf<String?>(null) }
     var quantities by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     var createdOrderDialog by remember { mutableStateOf<Pair<OrderRecord, Boolean>?>(null) }
     var showQuickAddTableDialog by remember { mutableStateOf(false) }
@@ -131,10 +133,10 @@ fun StaffTakeOrderTab(viewModel: RestaurantViewModel) {
         else activeTables.filter { it.zone == selectedZoneFilter?.name }
     }
 
-    val availableMenu = remember(effectiveMenu, searchQuery, selectedCategory) {
+    val availableMenu = remember(effectiveMenu, searchQuery, selectedCategoryCode) {
         effectiveMenu.filter { dish ->
             dish.available &&
-                (selectedCategory == null || dish.category == selectedCategory?.name) &&
+                (selectedCategoryCode == null || dish.category.equals(selectedCategoryCode, ignoreCase = true)) &&
                 (searchQuery.isBlank() ||
                     dish.name.contains(searchQuery.trim(), ignoreCase = true) ||
                     dish.varietiesDetail.contains(searchQuery.trim(), ignoreCase = true))
@@ -228,8 +230,9 @@ fun StaffTakeOrderTab(viewModel: RestaurantViewModel) {
                         StaffDishSearchAndFilter(
                             searchQuery = searchQuery,
                             onSearchChange = { searchQuery = it },
-                            selectedCategory = selectedCategory,
-                            onCategoryChange = { selectedCategory = it },
+                            categories = menuCategories,
+                            selectedCategoryCode = selectedCategoryCode,
+                            onCategoryChange = { selectedCategoryCode = it },
                             totalCount = totalCount,
                             totalAmountPkr = totalAmountPkr
                         )
@@ -246,6 +249,7 @@ fun StaffTakeOrderTab(viewModel: RestaurantViewModel) {
                         items(availableMenu, key = { it.id }) { dish ->
                             StaffVarietyDishCard(
                                 dish = dish,
+                                categoryLabel = resolveCategoryDisplayLabel(dish.category, menuCategories),
                                 quantities = quantities,
                                 onIncrement = { key ->
                                     quantities = quantities.toMutableMap().apply {
@@ -455,8 +459,9 @@ fun StaffTakeOrderTab(viewModel: RestaurantViewModel) {
                         StaffDishSearchAndFilter(
                             searchQuery = searchQuery,
                             onSearchChange = { searchQuery = it },
-                            selectedCategory = selectedCategory,
-                            onCategoryChange = { selectedCategory = it },
+                            categories = menuCategories,
+                            selectedCategoryCode = selectedCategoryCode,
+                            onCategoryChange = { selectedCategoryCode = it },
                             totalCount = totalCount,
                             totalAmountPkr = totalAmountPkr
                         )
@@ -473,6 +478,7 @@ fun StaffTakeOrderTab(viewModel: RestaurantViewModel) {
                         items(availableMenu, key = { it.id }) { dish ->
                             StaffVarietyDishCard(
                                 dish = dish,
+                                categoryLabel = resolveCategoryDisplayLabel(dish.category, menuCategories),
                                 quantities = quantities,
                                 onIncrement = { key ->
                                     quantities = quantities.toMutableMap().apply {
@@ -859,8 +865,9 @@ private fun StaffOrderDetailsCard(
 private fun StaffDishSearchAndFilter(
     searchQuery: String,
     onSearchChange: (String) -> Unit,
-    selectedCategory: MenuCategory?,
-    onCategoryChange: (MenuCategory?) -> Unit,
+    categories: List<MenuCategoryRecord>,
+    selectedCategoryCode: String?,
+    onCategoryChange: (String?) -> Unit,
     totalCount: Int,
     totalAmountPkr: Long
 ) {
@@ -881,7 +888,7 @@ private fun StaffDishSearchAndFilter(
         )
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             FilterChip(
-                selected = selectedCategory == null,
+                selected = selectedCategoryCode == null,
                 onClick = { onCategoryChange(null) },
                 label = { Text("All") },
                 colors = FilterChipDefaults.filterChipColors(
@@ -889,10 +896,10 @@ private fun StaffDishSearchAndFilter(
                     selectedLabelColor = CharcoalDeep
                 )
             )
-            MenuCategory.entries.forEach { cat ->
+            categories.forEach { cat ->
                 FilterChip(
-                    selected = selectedCategory == cat,
-                    onClick = { onCategoryChange(cat) },
+                    selected = selectedCategoryCode.equals(cat.code, ignoreCase = true),
+                    onClick = { onCategoryChange(cat.code) },
                     label = { Text(cat.displayLabel) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = SmokedAmber,
@@ -908,6 +915,7 @@ private fun StaffDishSearchAndFilter(
 @Composable
 private fun StaffVarietyDishCard(
     dish: MenuItem,
+    categoryLabel: String,
     quantities: Map<String, Int>,
     onIncrement: (String) -> Unit,
     onDecrement: (String) -> Unit
@@ -947,7 +955,7 @@ private fun StaffVarietyDishCard(
                         }
                     }
                     Text(
-                        text = "${activeVariety.label}: ${formatPkr(activeVariety.pricePkr)} · ${MenuCategory.fromRaw(dish.category).displayLabel}",
+                        text = "${activeVariety.label}: ${formatPkr(activeVariety.pricePkr)} · $categoryLabel",
                         style = MonoPriceStyle,
                         color = SmokedAmber
                     )

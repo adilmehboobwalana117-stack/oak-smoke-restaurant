@@ -12,6 +12,7 @@
         "autoPrintDailyReport": { "type": "boolean", "description": "Whether closing daily report prompts PrintManager automatically." },
         "loyaltyEarnPer100Pkr": { "type": "integer", "description": "Loyalty points awarded per 100 PKR spent." },
         "loyaltyPointValuePkr": { "type": "integer", "description": "PKR discount value of 1 loyalty point." },
+        "publicDownloadUrl": { "type": "string", "description": "Optional public HTTPS download link for QR codes (Play Store, GitHub Pages PWA, or direct APK page)." },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation." },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update." }
       },
@@ -71,7 +72,7 @@
       "properties": {
         "catalogType": { "type": "string", "enum": ["MENU"] },
         "name": { "type": "string" },
-        "category": { "type": "string", "enum": ["KARAHI", "BBQ", "PLATTERS", "NAAN_SIDES", "BEVERAGES"] },
+        "category": { "type": "string", "description": "Normalized category code (e.g. KARAHI, BBQ, HANDI, DESSERTS)." },
         "description": { "type": "string" },
         "pricePkr": { "type": "integer" },
         "varietiesDetail": { "type": "string", "description": "Encoded list of up to 4 dish varieties and PKR rates (Label||PricePkr per line)." },
@@ -246,6 +247,20 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["catalogType", "label", "zone", "capacity", "available", "displayOrder", "createdAt", "updatedAt"]
+    },
+    "MenuCategoryRecord": {
+      "title": "MenuCategoryRecord",
+      "description": "Admin-managed menu category displayed across Customer Menu, Staff POS, and Owner Menu Studio.",
+      "type": "object",
+      "properties": {
+        "catalogType": { "type": "string", "enum": ["CATEGORY"] },
+        "code": { "type": "string" },
+        "displayLabel": { "type": "string" },
+        "displayOrder": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["catalogType", "code", "displayLabel", "displayOrder", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -300,6 +315,10 @@
     "/diningTables/{tableId}": {
       "schema": { "$ref": "#/entities/DiningTable" },
       "description": "Admin-managed dining tables, cabins, and lawn tables."
+    },
+    "/menuCategories/{categoryId}": {
+      "schema": { "$ref": "#/entities/MenuCategoryRecord" },
+      "description": "Admin-managed dynamic menu categories."
     }
   }
 }

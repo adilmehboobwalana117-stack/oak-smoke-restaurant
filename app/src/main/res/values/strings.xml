@@ -1,10 +1,10 @@
 <resources>
     <string name="app_name">Oak &amp; Smoke</string>
-    <string name="pwa_banner_title">PC &amp; Mobile App · QR &amp; PWA</string>
-    <string name="pwa_banner_subtitle">Scan QR or install Oak &amp; Smoke on Windows/Mac PC</string>
-    <string name="pwa_download_cta">PC / PWA</string>
-    <string name="pwa_qr_modal_title">Install on PC &amp; Mobile (QR &amp; PWA)</string>
-    <string name="pwa_qr_open_browser">Download / Install on PC (PWA)</string>
+    <string name="pwa_banner_title">Scan QR to Download App</string>
+    <string name="pwa_banner_subtitle">Tap QR to share public download for Android &amp; PC</string>
+    <string name="pwa_download_cta">Scan QR</string>
+    <string name="pwa_qr_modal_title">Scan QR &amp; Download App</string>
+    <string name="pwa_qr_open_browser">Open PC &amp; Web App (PWA)</string>
     <string name="pwa_qr_pin_shortcut">Add Shortcut</string>
     <string name="pwa_qr_share_link">Share Link</string>
     <string name="pwa_qr_copy_link">Copy Link</string>

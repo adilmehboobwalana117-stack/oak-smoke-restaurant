@@ -80,13 +80,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.data.CartLine
-import com.example.data.MenuCategory
+import com.example.data.MenuCategoryRecord
 import com.example.data.MenuItem
 import com.example.data.SpiceLevel
 import com.example.data.cartItemKey
 import com.example.data.formatCoordinates
 import com.example.data.formatPkr
 import com.example.data.parsedVarieties
+import com.example.data.resolveCategoryDisplayLabel
 import com.example.services.CapturedLocation
 import com.example.services.LocationHelper
 import com.example.ui.components.EmptyStateCard
@@ -114,6 +115,7 @@ fun CustomerMenuScreen(
     onNavigateToProfile: () -> Unit
 ) {
     val menuState by viewModel.menuState.collectAsStateWithLifecycle()
+    val menuCategories by viewModel.menuCategories.collectAsStateWithLifecycle()
     val cartLines by viewModel.cartLines.collectAsStateWithLifecycle()
     val cartQuantities by viewModel.cartQuantities.collectAsStateWithLifecycle()
     val profile by viewModel.userProfile.collectAsStateWithLifecycle()
@@ -315,7 +317,7 @@ fun CustomerMenuScreen(
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val chips = listOf("ALL" to "All Menu", "SPECIALS" to "Daily Specials") +
-                        MenuCategory.entries.map { it.name to it.displayLabel }
+                        menuCategories.map { it.code to it.displayLabel }
                     items(chips) { (key, label) ->
                         FilterChip(
                             selected = selectedFilter == key,
@@ -371,6 +373,7 @@ fun CustomerMenuScreen(
                         items(filteredItems, key = { it.id }) { dish ->
                             MenuDishCard(
                                 dish = dish,
+                                categoryLabel = resolveCategoryDisplayLabel(dish.category, menuCategories),
                                 cartQuantities = cartQuantities,
                                 onIncrementKey = { key -> viewModel.incrementCart(key) },
                                 onDecrementKey = { key -> viewModel.decrementCart(key) }
@@ -564,6 +567,7 @@ private fun DailySpecialCard(
 @Composable
 private fun MenuDishCard(
     dish: MenuItem,
+    categoryLabel: String,
     cartQuantities: Map<String, Int>,
     onIncrementKey: (String) -> Unit,
     onDecrementKey: (String) -> Unit
@@ -604,7 +608,7 @@ private fun MenuDishCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = MenuCategory.fromRaw(dish.category).displayLabel,
+                            text = categoryLabel,
                             style = MaterialTheme.typography.labelSmall,
                             color = SmokedAmber
                         )

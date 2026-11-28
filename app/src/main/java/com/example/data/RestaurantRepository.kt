@@ -124,6 +124,20 @@ class RestaurantRepository(private val db: FirebaseFirestore) {
         )
     }
 
+    fun observeMenuCategories(uid: String): Flow<List<MenuCategoryRecord>> = flow {
+        val path = "menuCategories"
+        emitAll(
+            db.collection("menuCategories")
+                .whereEqualTo("catalogType", "CATEGORY")
+                .snapshots()
+                .map { snap ->
+                    snap.toObjects(MenuCategoryRecord::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                        .sortedWith(compareBy<MenuCategoryRecord> { it.displayOrder }.thenBy { it.displayLabel })
+                }
+                .logAndRethrow(OperationType.LIST, path, uid)
+        )
+    }
+
     fun observeDiningTables(uid: String): Flow<List<DiningTable>> = flow {
         val path = "diningTables"
         emitAll(

@@ -824,4 +824,92 @@ test("Rider role can fetch customer GPS orders, receive RIDER_READY alerts, deli
   await assertFails(riderDb.collection("inventory").get());
 });
 
+test("Menu Categories allow Owner/Manager add & remove, custom MenuItem category codes, and Customer read-only", async () => {
+  await seedOwnerAndStaff();
+  const ownerDb = testEnv.authenticatedContext(OWNER_UID).firestore();
+  const staffDb = testEnv.authenticatedContext(STAFF_UID).firestore();
+  const custDb = testEnv.authenticatedContext(CUSTOMER_UID).firestore();
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  const now = ts(-3000);
+
+  // Unauthenticated access denied
+  await assertFails(unauthDb.collection("menuCategories").where("catalogType", "==", "CATEGORY").get());
+
+  // Owner creates custom category "HANDI"
+  await assertSucceeds(
+    ownerDb.collection("menuCategories").doc("cat_handi").set({
+      catalogType: "CATEGORY",
+      code: "HANDI",
+      displayLabel: "Matka Handi",
+      displayOrder: 6,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Invalid lowercase category code rejected
+  await assertFails(
+    ownerDb.collection("menuCategories").doc("cat_bad").set({
+      catalogType: "CATEGORY",
+      code: "bad code!",
+      displayLabel: "Bad Code",
+      displayOrder: 7,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Owner adds a dish under custom category "HANDI"
+  await assertSucceeds(
+    ownerDb.collection("menuItems").doc("chicken_matka_handi").set({
+      catalogType: "MENU",
+      name: "Makhni Matka Handi",
+      category: "HANDI",
+      description: "Creamy boneless chicken cooked in clay pot.",
+      pricePkr: 1650,
+      varietiesDetail: "Half||1650\nFull||2950",
+      imageKey: "karahi",
+      dailySpecial: false,
+      available: true,
+      spiceLevel: "MEDIUM",
+      prepMinutes: 25,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Customer and Staff can read categories, but cannot create or delete them
+  await assertSucceeds(custDb.collection("menuCategories").where("catalogType", "==", "CATEGORY").get());
+  await assertSucceeds(staffDb.collection("menuCategories").where("catalogType", "==", "CATEGORY").get());
+  await assertFails(
+    custDb.collection("menuCategories").doc("cat_hack").set({
+      catalogType: "CATEGORY",
+      code: "HACK",
+      displayLabel: "Hack",
+      displayOrder: 9,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+  await assertFails(staffDb.collection("menuCategories").doc("cat_handi").delete());
+
+  // Owner can remove custom category
+  await assertSucceeds(ownerDb.collection("menuCategories").doc("cat_handi").delete());
+
+  // Owner can save HTTPS publicDownloadUrl in restaurantConfig, while non-HTTPS URLs fail
+  await assertSucceeds(
+    ownerDb.collection("restaurantConfig").doc("oak_and_smoke").update({
+      publicDownloadUrl: "https://play.google.com/store/apps/details?id=com.aistudio.oakandsmoke.hsplrk",
+      updatedAt: ts(-500),
+    })
+  );
+  await assertFails(
+    ownerDb.collection("restaurantConfig").doc("oak_and_smoke").update({
+      publicDownloadUrl: "javascript:alert(1)",
+      updatedAt: ts(-400),
+    })
+  );
+});
+
+
 

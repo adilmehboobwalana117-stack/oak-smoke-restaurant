@@ -36,20 +36,20 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import java.io.FileOutputStream
 
 enum class AppDownloadTarget(val label: String, val url: String, val description: String) {
+    PUBLIC_DOWNLOAD(
+        label = "Public App",
+        url = AppPwaQrService.ANDROID_PLAY_URL,
+        description = "Anyone can scan this QR code with their phone camera to download and install Oak & Smoke immediately (uses custom public link if set by Owner, otherwise Google Play)."
+    ),
     WEB_PWA(
-        label = "PC & Web PWA",
+        label = "PC & Web App",
         url = AppPwaQrService.PWA_APP_URL,
-        description = "Open on Windows/Mac/Chromebook (Chrome or Edge) or Mobile & click 'Install App' to run Oak & Smoke as a standalone PC & Web App with offline support."
+        description = "Open on Windows, Mac, Chromebook, or Mobile browser & tap 'Install App' to run Oak & Smoke as a standalone PC & Web App with offline support."
     ),
     PLAY_TESTER(
         label = "Tester Opt-In",
         url = AppPwaQrService.PLAY_TESTER_URL,
-        description = "Google Play Internal/Closed Testing opt-in link. Testers must accept here first before downloading."
-    ),
-    ANDROID_STORE(
-        label = "Play Store",
-        url = AppPwaQrService.ANDROID_PLAY_URL,
-        description = "Direct Google Play Store listing for Oak & Smoke Restaurant Hasilpur."
+        description = "Google Play Closed/Internal Testing opt-in page. Testers can join here before installing pre-release updates."
     )
 }
 
@@ -66,6 +66,47 @@ object AppPwaQrService {
 
     private const val PREFS_NAME = "oak_smoke_pwa_prefs"
     private const val KEY_PWA_ACTION_TAKEN = "pwa_action_taken"
+    private const val KEY_CUSTOM_PUBLIC_DOWNLOAD_URL = "custom_public_download_url"
+
+    fun isValidHttpsUrl(url: String): Boolean {
+        val trimmed = url.trim()
+        return trimmed.startsWith("https://", ignoreCase = true) && trimmed.length in 12..300 && !trimmed.contains(" ")
+    }
+
+    fun cachePublicDownloadUrl(context: Context, url: String) {
+        val cleaned = url.trim()
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_CUSTOM_PUBLIC_DOWNLOAD_URL, if (isValidHttpsUrl(cleaned)) cleaned else "")
+            .apply()
+    }
+
+    fun getCachedPublicDownloadUrl(context: Context): String {
+        val stored = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_CUSTOM_PUBLIC_DOWNLOAD_URL, "")
+            .orEmpty()
+            .trim()
+        return if (isValidHttpsUrl(stored)) stored else ""
+    }
+
+    fun resolveTargetUrl(
+        context: Context,
+        target: AppDownloadTarget,
+        configPublicUrl: String = ""
+    ): String {
+        return when (target) {
+            AppDownloadTarget.PUBLIC_DOWNLOAD -> {
+                val liveConfigUrl = configPublicUrl.trim()
+                when {
+                    isValidHttpsUrl(liveConfigUrl) -> liveConfigUrl
+                    getCachedPublicDownloadUrl(context).isNotBlank() -> getCachedPublicDownloadUrl(context)
+                    else -> ANDROID_PLAY_URL
+                }
+            }
+            AppDownloadTarget.WEB_PWA -> PWA_APP_URL
+            AppDownloadTarget.PLAY_TESTER -> PLAY_TESTER_URL
+        }
+    }
 
     /**
      * Verifies that this Android app package is installed on the device.
@@ -99,7 +140,8 @@ object AppPwaQrService {
     }
 
     /**
-     * Generates a genuine ISO/IEC 18004 QR Code matrix using ZXing Core.
+     * Generates a genuine ISO/IEC 18004 QR Code matrix using ZXing Core with a generous quiet zone
+     * so any smartphone camera locks on and scans reliably in restaurant lighting.
      */
     fun encodeQrMatrix(content: String): BitMatrix? {
         if (content.isBlank()) return null
@@ -107,7 +149,7 @@ object AppPwaQrService {
             val hints = mapOf(
                 EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M,
                 EncodeHintType.CHARACTER_SET to "UTF-8",
-                EncodeHintType.MARGIN to 1
+                EncodeHintType.MARGIN to 2
             )
             QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, 0, 0, hints)
         } catch (_: Exception) {
